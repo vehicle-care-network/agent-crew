@@ -1,0 +1,202 @@
+name: Agent · Radar
+
+# Radar, the technical analyst (briefs/RADAR.md):
+#   - labels every PR with its impact tier from the repo's .github/agents/risk-map.json (no AI, seconds);
+#   - estimates the impact of new HQ missions before they're built (triage);
+#   - audits the codebase weekly (major dependency upgrades, serious advisories, cleanup) and monthly
+#     (plus security, performance and SEO), and sends at most a handful of ideas to Agent HQ's inbox;
+#   - checks daily whether main is due for Scout's regression run, and starts it when it is.
+# It proposes; it never changes code.
+# Reusable: a repo's `.github/workflows/agent-radar.yml` holds the triggers and calls this.
+
+on:
+  workflow_call:
+    inputs:
+      params:
+        description: 'JSON from Agent HQ: { mode: triage|audit, mission_id, task, scope }. Wins over the inputs below.'
+        required: false
+        type: string
+        default: ''
+      event:
+        description: The caller's github.event_name
+        required: true
+        type: string
+      schedule:
+        description: The caller's github.event.schedule (cron string) for schedule events
+        required: false
+        type: string
+        default: ''
+      pr_number:
+        description: The PR to label (pull_request events)
+        required: false
+        type: string
+        default: ''
+      mode:
+        description: triage or audit (manual input)
+        required: false
+        type: string
+        default: ''
+      scope:
+        description: weekly or monthly (manual input)
+        required: false
+        type: string
+        default: ''
+
+env:
+  AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+
+jobs:
+  label-pr:
+    if: inputs.event == 'pull_request' && inputs.pr_number != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ inputs.pr_number }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: vehicle-care-network/agent-crew@v1
+      - name: Label the PR's impact
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/$PR/files?per_page=100" --paginate --jq '.[].filename' > files.txt
+          result=$(node .crew/scripts/agents/impact.mjs - < files.txt)
+          tier=$(jq -r .tier <<<"$result")
+          order="low normal high critical"
+          rank() { i=0; for t in $order; do [ "$t" = "$1" ] && echo $i; i=$((i+1)); done; }
+          current=$(gh api "repos/${{ github.repository }}/issues/$PR/labels" --jq '[.[].name | select(startswith("impact:"))][0] // "" | sub("impact:"; "")')
+          # Radar only raises. Iris, who reads the code, sets the final tier and may lower it with a reason.
+          if [ -n "$current" ] && [ "$(rank "$current")" -ge "$(rank "$tier")" ]; then
+            echo "Keeping impact:$current (computed $tier)"; exit 0
+          fi
+          [ -n "$current" ] && gh api -X DELETE "repos/${{ github.repository }}/issues/$PR/labels/impact:$current" >/dev/null || true
+          gh api -X POST "repos/${{ github.repository }}/issues/$PR/labels" -f "labels[]=impact:$tier" >/dev/null
+          echo "Labelled impact:$tier"; jq -r '.reasons[] | "  \(.tier): \(.rule) (\(.files | length) files)"' <<<"$result"
+
+  triage:
+    if: inputs.event == 'workflow_dispatch' && (fromJSON(inputs.params || '{}').mode || inputs.mode) == 'triage'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MISSION_ID: ${{ fromJSON(inputs.params || '{}').mission_id }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: vehicle-care-network/agent-crew@v1
+      - run: mkdir -p radar-out
+      - name: Radar estimates the impact
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          RADAR_MODE: triage
+          RADAR_TASK: ${{ fromJSON(inputs.params || '{}').task }}
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          prompt: |
+            Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: triage.
+            The task is in the environment variable RADAR_TASK.
+          claude_args: |
+            --model ${{ vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
+            --max-turns 40
+            --allowedTools Bash,Read,Glob,Grep,Write
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" radar "triage" "$MISSION_ID" ""
+      - name: Tell HQ
+        run: |
+          test -s radar-out/impact.json || { echo "::error::Radar didn't write radar-out/impact.json"; exit 1; }
+          node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -c '{agent:"radar",type:"impact",tier,reasons}' radar-out/impact.json)"
+
+  regression-check:
+    if: inputs.event == 'schedule' && inputs.schedule == '0 13 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write # to start Scout's regression run
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: vehicle-care-network/agent-crew@v1
+      - name: Is main due for a regression run?
+        id: due
+        run: node .crew/scripts/agents/regression-due.mjs
+      - name: Start Scout's regression run
+        if: steps.due.outputs.due == 'true'
+        env:
+          REASON: ${{ steps.due.outputs.reason }}
+        run: |
+          gh workflow run scout-qa.yml -R "${{ github.repository }}" -f mode=regression -f focus="Radar: $REASON"
+
+  audit:
+    if: (inputs.event == 'schedule' && inputs.schedule != '0 13 * * *') || (inputs.event == 'workflow_dispatch' && (fromJSON(inputs.params || '{}').mode || inputs.mode) == 'audit')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SCOPE: ${{ inputs.schedule == '0 15 1 * *' && 'monthly' || fromJSON(inputs.params || '{}').scope || inputs.scope || 'weekly' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up the crew
+        id: crew
+        uses: vehicle-care-network/agent-crew@v1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.crew.outputs.node }}
+          cache: npm
+      - run: bash -c "$(jq -r .commands.install .github/agents/crew.json)"
+      - name: Gather facts
+        run: |
+          mkdir -p radar-out
+          node .crew/scripts/agents/dep-facts.mjs > radar-out/facts.json
+          node .crew/scripts/agents/hq.mjs ideas-known > radar-out/known.json
+          jq '{majors: (.majors | length), vulnerabilities: (.vulnerabilities | length)}' radar-out/facts.json
+      - name: Radar audits
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          RADAR_MODE: audit
+          RADAR_SCOPE: ${{ env.SCOPE }}
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          prompt: |
+            Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: audit. RADAR_SCOPE: ${{ env.SCOPE }}.
+          claude_args: |
+            --model ${{ vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
+            --max-turns 150
+            --allowedTools Bash,Read,Glob,Grep,Write,WebFetch
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" radar "audit" "" ""
+      - name: Send ideas to HQ
+        run: |
+          test -s radar-out/ideas.json || echo '[]' > radar-out/ideas.json
+          node .crew/scripts/agents/hq.mjs ideas-post radar-out/ideas.json "$SCOPE"

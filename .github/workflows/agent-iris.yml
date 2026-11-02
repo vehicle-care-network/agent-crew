@@ -1,0 +1,186 @@
+name: Agent · Iris
+
+# Iris, the reviewer. She reviews every new PR on her own (the caller's pull_request trigger), Agent HQ
+# starts her on its agents' PRs, and anyone can ask by commenting `/iris`. She also sets the PR's final
+# impact label. She posts a COMMENT review with a verdict marker; approving and landing stay with a person.
+# Reusable: a repo's `.github/workflows/agent-iris.yml` holds the triggers and calls this. Brief: briefs/IRIS.md.
+
+on:
+  workflow_call:
+    inputs:
+      params:
+        description: 'JSON from Agent HQ: { pr_number, mission_id, round, instructions }. Wins over the inputs below.'
+        required: false
+        type: string
+        default: ''
+      pr_number:
+        description: PR to review (from the caller's event or manual input)
+        required: false
+        type: string
+        default: ''
+      instructions:
+        description: What Kayvan asked Iris to look at (manual input)
+        required: false
+        type: string
+        default: ''
+      event:
+        description: The caller's github.event_name
+        required: true
+        type: string
+      action:
+        description: The caller's github.event.action
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  iris:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+    steps:
+      # One request, whoever sent it: HQ's JSON wins, then the caller's event or manual inputs.
+      - name: Read the request
+        env:
+          PARAMS: ${{ inputs.params || '{}' }}
+          IN_PR: ${{ inputs.pr_number }}
+          IN_INSTRUCTIONS: ${{ inputs.instructions }}
+        run: |
+          pr=$(jq -r '.pr_number // empty' <<<"$PARAMS"); pr="${pr:-$IN_PR}"
+          [ -n "$pr" ] || { echo "::error::No PR number in the request"; exit 1; }
+          {
+            echo "PR_NUMBER=$pr"
+            echo "MISSION_ID=$(jq -r '.mission_id // empty' <<<"$PARAMS")"
+            echo "ROUND=$(jq -r '.round // empty' <<<"$PARAMS")"
+            echo "INSTRUCTIONS<<CREW_EOF"
+            if [ "$(jq -r '.instructions // empty' <<<"$PARAMS")" != "" ]; then jq -r .instructions <<<"$PARAMS"; else printf '%s' "$IN_INSTRUCTIONS"; fi
+            echo
+            echo "CREW_EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Resolve the PR
+        id: pr
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" > pr.json
+          if [ "$(jq -r .head.repo.full_name pr.json)" != "${{ github.repository }}" ]; then
+            echo "::error::Iris only reviews branches in this repository, not forks."
+            exit 1
+          fi
+          echo "sha=$(jq -r .head.sha pr.json)" >> "$GITHUB_OUTPUT"
+
+      # What changed since Iris last reviewed. On a push, nothing to do if her last review is of this
+      # commit, or if the new commits don't touch the PR's own files (say, merging main in).
+      - name: Find what's new since the last review
+        id: scope
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
+          ON_PUSH: ${{ inputs.event == 'pull_request' && inputs.action == 'synchronize' }}
+        run: |
+          repo="${{ github.repository }}"
+          gh api --paginate "repos/$repo/pulls/$PR_NUMBER/reviews" \
+            --jq '.[] | select((.body // "") | contains("<!-- iris-verdict:")) | .commit_id' > iris-reviews.txt
+          since=$(tail -n 1 iris-reviews.txt)
+          echo "round=${ROUND:-$(wc -l < iris-reviews.txt | tr -d ' ')}" >> "$GITHUB_OUTPUT"
+          skip=false
+          if [ -n "$since" ] && [ "$since" != "$HEAD_SHA" ] && gh api "repos/$repo/compare/$since...$HEAD_SHA" --jq '.files[].filename' > new-files.txt 2>/dev/null; then
+            echo "since=$since" >> "$GITHUB_OUTPUT"
+            if [ "$ON_PUSH" = true ]; then
+              gh api --paginate "repos/$repo/pulls/$PR_NUMBER/files" --jq '.[].filename' | sort -u > pr-files.txt
+              if [ -z "$(sort -u new-files.txt | comm -12 - pr-files.txt)" ]; then
+                echo "The new commits don't change this PR's files; nothing new to review."
+                skip=true
+              fi
+            fi
+          elif [ "$since" = "$HEAD_SHA" ] && [ "$ON_PUSH" = true ]; then
+            echo "Iris already reviewed $HEAD_SHA."
+            skip=true
+          fi
+          # PRs that only change the crew's own setup (workflows, agent config, Scout data) get no automatic
+          # review: Agent HQ marks them ready to land. Asking (/iris, or from HQ) still reviews them.
+          if [ "${{ inputs.event }}" = pull_request ]; then
+            gh api --paginate "repos/$repo/pulls/$PR_NUMBER/files" --jq '.[].filename' > all-files.txt
+            # Files outside the crew's paths; none at all means a crew-only PR. (Not grep's exit code: it differs between greps.)
+            others=$(grep -vE '^(\.github/|scripts/agents/|scripts/scout/|e2e/scout/_support/)' all-files.txt || true)
+            if [ -s all-files.txt ] && [ -z "$others" ]; then
+              echo "Only the crew's own setup changed; no automatic review."
+              skip=true
+            fi
+            rm -f all-files.txt
+          fi
+          # since is empty after a force-push that dropped the reviewed commit: then she reviews it all.
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          rm -f iris-reviews.txt new-files.txt pr-files.txt
+
+      - uses: actions/checkout@v7
+        if: steps.scope.outputs.skip != 'true'
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Set up the crew
+        if: steps.scope.outputs.skip != 'true'
+        uses: vehicle-care-network/agent-crew@v1
+
+      - name: Check in with HQ
+        if: steps.scope.outputs.skip != 'true' && env.MISSION_ID != ''
+        run: |
+          node .crew/scripts/agents/hq.mjs status "$MISSION_ID" iris "Reading the PR."
+          ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" iris "" || true; done ) &
+
+      - name: Iris reviews
+        if: steps.scope.outputs.skip != 'true'
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Agent HQ starts these runs as its GitHub App; the action refuses bot-started runs unless listed.
+          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          prompt: |
+            Follow the brief in .crew/briefs/IRIS.md.
+            PR_NUMBER: ${{ env.PR_NUMBER }}
+            ROUND: ${{ steps.scope.outputs.round }}
+            SINCE: ${{ steps.scope.outputs.since }}
+            MISSION_ID: ${{ env.MISSION_ID }}
+            INSTRUCTIONS: ${{ env.INSTRUCTIONS }}
+          claude_args: |
+            --model ${{ vars.AGENT_MODEL_IRIS || 'claude-opus-5-5' }}
+            --max-turns 120
+            --allowedTools Bash,Read,Glob,Grep,Write
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: steps.scope.outputs.skip != 'true' && (always() && steps.claude.outputs.execution_file != '')
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" iris "review" "$MISSION_ID" "$PR_NUMBER"
+
+      - name: Post the review
+        if: steps.scope.outputs.skip != 'true'
+        id: review
+        env:
+          ROUND: ${{ steps.scope.outputs.round }}
+        run: |
+          test -s agent-out/review.json || { echo "::error::Iris didn't write agent-out/review.json"; exit 1; }
+          echo "result=$(node .crew/scripts/agents/post-review.mjs)" >> "$GITHUB_OUTPUT"
+
+      - name: Tell HQ the verdict
+        if: steps.scope.outputs.skip != 'true' && env.MISSION_ID != ''
+        env:
+          RESULT: ${{ steps.review.outputs.result }}
+        run: node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -c '{agent:"iris",type:"review",verdict,comments,summary,impact}' <<<"$RESULT")"
+
+      - name: Tell HQ it failed
+        if: steps.scope.outputs.skip != 'true' && (failure() && env.MISSION_ID != '')
+        run: node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg e "The Iris run failed. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{agent:"iris",type:"failed",error:$e}')"

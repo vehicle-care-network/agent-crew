@@ -1,0 +1,35 @@
+name: Set up the agent crew
+description: >
+  Lays the crew's shared scripts, briefs and Playwright config into `.crew/` in the current checkout, rendered
+  with the repo's `.github/agents/crew.json` and notes. Used by the crew's reusable workflows; a repo
+  never holds a copy of the crew itself.
+
+outputs:
+  node:
+    description: Node version for this repo (.nvmrc, then crew.json "node", then 22)
+    value: ${{ steps.render.outputs.node }}
+  scout_port:
+    description: Port Scout starts the app on (crew.json scout.port)
+    value: ${{ steps.render.outputs.scout_port }}
+  scout_base_url:
+    description: Base URL Scout's specs use
+    value: ${{ steps.render.outputs.scout_base_url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Lay the crew into .crew/
+      shell: bash
+      env:
+        CREW: ${{ github.action_path }}
+      run: |
+        rm -rf .crew && mkdir -p .crew
+        cp -R "$CREW/scripts" "$CREW/briefs" "$CREW/scout" "$CREW/playwright.scout.config.ts" .crew/
+        # The crew is tooling, not part of any PR: keep it (and the agents' scratch folders) out of `git add -A`.
+        mkdir -p .git/info
+        printf '%s\n' .crew/ agent-out/ radar-out/ scout-out/ changed-files.txt >> .git/info/exclude
+        echo "crew $(cat "$CREW/VERSION" 2>/dev/null || echo dev) from $CREW"
+    - name: Render the briefs for this repo
+      id: render
+      shell: bash
+      run: node .crew/scripts/setup/render.mjs

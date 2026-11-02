@@ -1,0 +1,349 @@
+name: Scout QA
+
+# Scout tests a PR the way a user would and posts screenshots, videos and results on the PR. Mode
+# `regression` tests the latest main across every core flow instead of one PR; results go to Agent HQ,
+# failures to its Ideas inbox. Reusable: a repo's `.github/workflows/scout-qa.yml` holds the triggers
+# (the `scout` label, `/scout` comments, manual runs, Agent HQ) and calls this. Brief: scout/PROMPT.md.
+#
+# The repo provides: .github/agents/crew.json (scout settings), .github/scout/core-flows.md,
+# scripts/scout/seed.mjs and fixtures.mjs, e2e/scout/_support/scout.ts (the Playwright harness and logins)
+# and e2e/scout/core/*.spec.ts.
+
+on:
+  workflow_call:
+    inputs:
+      params:
+        description: 'JSON from Agent HQ: { mode: pr|regression, pr_number, focus }. Wins over the inputs below.'
+        required: false
+        type: string
+        default: ''
+      mode:
+        description: pr or regression (manual input; default pr)
+        required: false
+        type: string
+        default: ''
+      pr_number:
+        description: PR to test (from the caller's event or manual input)
+        required: false
+        type: string
+        default: ''
+      focus:
+        description: What Scout should cover first (manual input)
+        required: false
+        type: string
+        default: ''
+      comment:
+        description: The `/scout ...` comment body, when a comment started the run
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read # to reuse the specs Scout wrote on this PR's previous run
+    env:
+      SCOUT_OUT: scout-out
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # One request, whoever sent it: HQ's JSON wins, then the caller's event or manual inputs.
+      - name: Read the request
+        id: pr
+        env:
+          PARAMS: ${{ inputs.params || '{}' }}
+          IN_MODE: ${{ inputs.mode }}
+          IN_PR: ${{ inputs.pr_number }}
+          IN_FOCUS: ${{ inputs.focus }}
+          COMMENT: ${{ inputs.comment }}
+        run: |
+          mode=$(jq -r '.mode // empty' <<<"$PARAMS"); mode="${mode:-${IN_MODE:-pr}}"
+          [ "$mode" = regression ] || mode=pr
+          echo "SCOUT_MODE=$mode" >> "$GITHUB_ENV"
+          # Focus: HQ's, the manual input, or the text after `/scout` on the comment's first line.
+          focus=$(jq -r '.focus // empty' <<<"$PARAMS")
+          [ -n "$focus" ] || focus="${IN_FOCUS:-$(printf '%s' "$COMMENT" | head -1 | sed -E 's#^/scout[[:space:]]*##')}"
+          if [ "$mode" = regression ]; then
+            branch=$(gh api "repos/${{ github.repository }}" --jq .default_branch)
+            number=0; sha=$(gh api "repos/${{ github.repository }}/commits/$branch" --jq .sha)
+          else
+            number=$(jq -r '.pr_number // empty' <<<"$PARAMS"); number="${number:-$IN_PR}"
+            [ -n "$number" ] || { echo "::error::No PR number in the request"; exit 1; }
+            gh api "repos/${{ github.repository }}/pulls/$number" > pr.json
+            if [ "$(jq -r .head.repo.full_name pr.json)" != "${{ github.repository }}" ]; then
+              echo "::error::Scout only runs on branches in this repository, not forks (no secrets are exposed to fork code)."
+              exit 1
+            fi
+            sha=$(jq -r .head.sha pr.json)
+          fi
+          { echo "number=$number"; echo "sha=$sha"; echo "focus<<SCOUT_EOF"; printf '%s\n' "$focus"; echo "SCOUT_EOF"; } >> "$GITHUB_OUTPUT"
+          echo "Mode $mode, PR #$number at ${sha:0:7}, focus: ${focus:-(none)}"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          fetch-depth: 0
+
+      # Branches opened before Scout's data existed don't contain it, so take the repo's Scout pieces
+      # (crew.json, risk map, core flows, seed, harness, core specs) from the commit this run was started
+      # from (main for comments, HQ and manual runs) and lay them over the PR's code.
+      - name: Fetch the repo's Scout pieces
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: .scout-tooling
+          sparse-checkout: |
+            .github/agents
+            .github/scout
+            scripts/scout
+            e2e/scout/_support
+            e2e/scout/core
+          sparse-checkout-cone-mode: false
+
+      - name: Install them over the PR
+        run: |
+          mkdir -p .github/agents .github/scout scripts/scout e2e/scout
+          cp -R .scout-tooling/.github/agents/. .github/agents/
+          cp -R .scout-tooling/.github/scout/. .github/scout/
+          cp -R .scout-tooling/scripts/scout/. scripts/scout/
+          cp -R .scout-tooling/e2e/scout/_support .scout-tooling/e2e/scout/core e2e/scout/
+          rm -rf .scout-tooling
+
+      - name: Set up the crew
+        id: crew
+        uses: vehicle-care-network/agent-crew@v1
+
+      # How much testing this PR deserves, from Radar's risk map: low-impact changes (docs, tests, tooling)
+      # get the smoke flows only and no agent; the rest get a flow budget and a turn cap by impact.
+      - name: Size the run
+        id: scope
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          FOCUS: ${{ steps.pr.outputs.focus }}
+        run: |
+          if [ "$SCOUT_MODE" = regression ]; then
+            tier=regression; agent=true; turns=150; budget="every flow in .github/scout/core-flows.md"
+          else
+            gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files?per_page=100" --paginate --jq '.[].filename' > changed-files.txt
+            tier=$(node .crew/scripts/agents/impact.mjs - < changed-files.txt | jq -r .tier)
+            agent=true
+            case "$tier" in
+              low)      turns=30; budget="none: smoke flows only"; [ -z "$FOCUS" ] && agent=false ;;
+              normal)   turns=45; budget="1 to 2 flows" ;;
+              high)     turns=70; budget="2 to 3 flows" ;;
+              critical) turns=100; budget="up to 5 flows, including edge cases" ;;
+            esac
+            rm -f changed-files.txt
+          fi
+          echo "Impact $tier: agent=$agent, budget $budget, max $turns turns"
+          { echo "tier=$tier"; echo "agent=$agent"; echo "turns=$turns"; echo "budget=$budget"; } >> "$GITHUB_OUTPUT"
+
+      - name: Post "Scout is testing"
+        if: env.SCOUT_MODE == 'pr'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
+        run: node .crew/scripts/scout/report.mjs --status running
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.crew.outputs.node }}
+
+      # Installing dependencies took ~2.5 minutes a run; restoring node_modules takes seconds.
+      - name: Restore node_modules
+        id: deps
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: scout-deps-${{ runner.os }}-node${{ steps.crew.outputs.node }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Restore the Firebase emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: scout-firebase-emulators-v15
+
+      # firebase-tools 15 needs Java 21+ for the Firestore emulator.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: bash -c "$(jq -r .commands.install .github/agents/crew.json)"
+
+      # Vercel won't deploy a PR that doesn't type-check, so there's nothing worth testing in a browser yet.
+      # Type errors in the files this PR changed go to the top of the report (HQ sends Patch to fix them),
+      # and the agent is skipped, which saves its tokens.
+      - name: Check the build
+        id: build
+        if: env.SCOUT_MODE == 'pr'
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          mkdir -p scout-out
+          gh pr diff "$PR_NUMBER" -R "${{ github.repository }}" --name-only | grep -E '\.tsx?$' > changed.txt || true
+          bash -c "$(jq -r .commands.typecheck .github/agents/crew.json)" > tsc.txt 2>&1 || true
+          grep -F -f changed.txt tsc.txt | grep -E '^[^ ].*\([0-9]+,[0-9]+\): error TS' > build-errors.txt || true
+          if [ -s build-errors.txt ]; then
+            echo "::error::$(wc -l < build-errors.txt) type errors in files this PR changed"
+            cp build-errors.txt scout-out/build-errors.txt
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+          rm -f changed.txt tsc.txt build-errors.txt
+
+      - name: Install Playwright's Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Re-runs (after Patch pushes a fix, or a new commit) start from the specs Scout already wrote for this
+      # PR, instead of exploring and writing them from scratch.
+      - name: Reuse specs from the previous run
+        id: reuse
+        env:
+          NAME: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || format('pr-{0}', steps.pr.outputs.number) }}
+        run: |
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=$NAME&per_page=1" --jq '[.artifacts[] | select(.expired | not)][0].id // empty')
+          if [ -n "$id" ]; then
+            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > specs.zip
+            unzip -o -q specs.zip -d e2e/scout && rm specs.zip
+            echo "Reusing specs: $(ls e2e/scout | tr '\n' ' ')"
+            echo "reused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reused=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Start the app on emulators
+        run: .crew/scripts/scout/start-env.sh
+
+      # Specs reused from the previous run need the data their seed scripts create.
+      - name: Load seeds from the previous run
+        if: steps.reuse.outputs.reused == 'true'
+        run: |
+          set -a; . ./.env.local; set +a
+          for f in e2e/scout/_seed/*.mjs; do [ -f "$f" ] && node "$f"; done
+
+      - name: Scout explores, seeds and writes specs
+        id: scout
+        if: steps.scope.outputs.agent == 'true' && steps.build.outputs.ok != 'false'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          SCOUT_BASE_URL: ${{ steps.crew.outputs.scout_base_url }}
+          SCOUT_FOCUS: ${{ steps.pr.outputs.focus }}
+          SCOUT_TIER: ${{ steps.scope.outputs.tier }}
+          SCOUT_BUDGET: ${{ steps.scope.outputs.budget }}
+          SCOUT_REUSED: ${{ steps.reuse.outputs.reused }}
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Agent HQ starts these runs as its GitHub App; the action refuses bot-started runs unless listed.
+          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          prompt: |
+            Follow the brief in .crew/scout/PROMPT.md.
+            SCOUT_MODE: ${{ env.SCOUT_MODE }}
+            PR_NUMBER: ${{ steps.pr.outputs.number }}
+            SCOUT_BASE_URL: ${{ steps.crew.outputs.scout_base_url }}
+            SCOUT_FOCUS: ${{ steps.pr.outputs.focus || '(none)' }}
+            IMPACT: ${{ steps.scope.outputs.tier }}
+            FLOW BUDGET: ${{ steps.scope.outputs.budget }}
+            SPECS FROM THE PREVIOUS RUN: ${{ steps.reuse.outputs.reused == 'true' && 'yes, under e2e/scout' || 'none' }}
+          claude_args: |
+            --model ${{ vars.AGENT_MODEL_SCOUT || 'claude-sonnet-5-5' }}
+            --max-turns ${{ steps.scope.outputs.turns }}
+            --mcp-config .crew/scout/mcp.json
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep,mcp__playwright
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: always() && steps.scout.outputs.execution_file != ''
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.scout.outputs.execution_file }}" scout "${{ env.SCOUT_MODE == 'regression' && 'regression' || 'qa' }}" "" "${{ steps.pr.outputs.number }}"
+
+      # The comment's pass/fail comes from this run, not from the agent's own runs: every spec, core and
+      # PR-specific, is executed once more against the final state of the tests.
+      - name: Run every Scout spec for the record
+        if: always()
+        env:
+          SCOUT_BASE_URL: ${{ steps.crew.outputs.scout_base_url }}
+        run: npx playwright test -c .crew/playwright.scout.config.ts || true
+
+      - name: Keep the specs for the next run
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || format('pr-{0}', steps.pr.outputs.number) }}
+          path: |
+            e2e/scout/pr-*.spec.ts
+            e2e/scout/regression/
+            e2e/scout/_seed/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # Screenshots and videos go to Agent HQ, where they play inline. The run authenticates with its
+      # GitHub OIDC token (id-token: write above), so no HQ secret is stored in any repo.
+      - name: Send evidence to Agent HQ
+        id: hq
+        if: always()
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
+          SCOUT_AGENT_OUTCOME: ${{ steps.scout.outcome }}
+          SCOUT_TIER: ${{ steps.scope.outputs.tier }}
+        run: node .crew/scripts/scout/upload-evidence.mjs
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scout-evidence
+          path: |
+            scout-out/
+            e2e/scout/
+          retention-days: 14
+
+      - name: Send regression failures to HQ's Ideas
+        if: always() && env.SCOUT_MODE == 'regression'
+        run: |
+          node .crew/scripts/scout/regression-ideas.mjs > scout-out/regression-ideas.json
+          node .crew/scripts/agents/hq.mjs ideas-post scout-out/regression-ideas.json regression
+
+      - name: Post the report
+        if: always() && env.SCOUT_MODE == 'pr'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
+          SCOUT_AGENT_OUTCOME: ${{ steps.scout.outcome }}
+          SCOUT_TIER: ${{ steps.scope.outputs.tier }}
+          HQ_EVIDENCE_URL: ${{ steps.hq.outputs.url }}
+        run: node .crew/scripts/scout/report.mjs
+
+      - name: Stop the app
+        if: always()
+        run: .crew/scripts/scout/stop-env.sh
+
+      # The agent step is continue-on-error so the report still posts; fail the run afterwards so a broken
+      # agent (missing key, crash) shows red in the checks instead of a misleading green.
+      - name: Fail if the agent didn't run
+        if: steps.scout.outcome == 'failure'
+        run: |
+          echo "::error::Scout's agent step failed, so this PR was only smoke-tested. Check that ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is set."
+          exit 1

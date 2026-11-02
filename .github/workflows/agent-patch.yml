@@ -1,0 +1,168 @@
+name: Agent · Patch
+
+# Patch, the fixer. Started by Agent HQ on its agents' PRs when Iris requests changes, Scout finds
+# failures, CI fails or the PR has merge conflicts, and on any PR when you ask from HQ (`request`). Pushes
+# fixes to the PR's branch; HQ then sends it back to Iris.
+# Reusable: a repo's `.github/workflows/agent-patch.yml` is a thin caller of this one. Brief: briefs/PATCH.md.
+
+on:
+  workflow_call:
+    inputs:
+      params:
+        description: 'JSON from Agent HQ: { mission_id, pr_number, reason: review|qa|build|conflicts|request, instructions, round }'
+        required: true
+        type: string
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: agent-patch-${{ fromJSON(inputs.params).pr_number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    env:
+      MISSION_ID: ${{ fromJSON(inputs.params).mission_id }}
+      PR_NUMBER: ${{ fromJSON(inputs.params).pr_number }}
+      PATCH_REASON: ${{ fromJSON(inputs.params).reason || 'review' }}
+      INSTRUCTIONS: ${{ fromJSON(inputs.params).instructions }}
+      GH_TOKEN: ${{ github.token }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+    steps:
+      - name: Find the PR's branch
+        id: pr
+        run: |
+          case "$PATCH_REASON" in review|qa|build|conflicts|request) ;; *) echo "::error::Unknown reason '$PATCH_REASON'"; exit 1 ;; esac
+          gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" > pr.json
+          head=$(jq -r .head.ref pr.json)
+          # On its own, Patch only touches the crew's agent/* branches. A request you sent from HQ may target
+          # a developer's branch in this repo (never a fork).
+          if [ "$PATCH_REASON" != request ]; then
+            case "$head" in agent/*) ;; *) echo "::error::Patch only fixes agent/* branches, not $head"; exit 1 ;; esac
+          fi
+          [ "$(jq -r .head.repo.full_name pr.json)" = "${{ github.repository }}" ] || { echo "::error::Patch can't push to a fork"; exit 1; }
+          echo "branch=$head" >> "$GITHUB_OUTPUT"
+          echo "base=$(jq -r .base.ref pr.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          fetch-depth: 0
+
+      - name: Set up the crew
+        id: crew
+        uses: vehicle-care-network/agent-crew@v1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.crew.outputs.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: bash -c "$(jq -r .commands.install .github/agents/crew.json)"
+
+      - name: Check in with HQ
+        run: |
+          mkdir -p agent-out
+          node .crew/scripts/agents/hq.mjs status "$MISSION_ID" patch ""
+          ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" patch "" || true; done ) &
+
+      # Merge conflicts: merge the base branch in without committing. Clean parts are staged; conflicted files
+      # keep their markers for Patch to resolve (listed in agent-out/conflicts.txt).
+      - name: Merge the base branch in
+        if: env.PATCH_REASON == 'conflicts'
+        env:
+          BASE: ${{ steps.pr.outputs.base }}
+        run: |
+          git fetch -q origin "$BASE"
+          git -c user.name="Patch (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            merge --no-ff --no-commit "origin/$BASE" || true
+          git diff --name-only --diff-filter=U > agent-out/conflicts.txt
+          echo "Conflicted files:"; cat agent-out/conflicts.txt
+          if [ ! -s agent-out/conflicts.txt ] && [ ! -f .git/MERGE_HEAD ]; then
+            echo "::notice::origin/$BASE is already merged in; nothing to resolve"
+          fi
+
+      - name: Patch fixes
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Agent HQ starts these runs as its GitHub App; the action refuses bot-started runs unless listed.
+          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          prompt: |
+            Follow the brief in .crew/briefs/PATCH.md.
+            PR_NUMBER: ${{ env.PR_NUMBER }}
+            PATCH_REASON: ${{ env.PATCH_REASON }}
+            INSTRUCTIONS: ${{ env.INSTRUCTIONS }}
+            MISSION_ID: ${{ env.MISSION_ID }}
+          claude_args: |
+            --model ${{ vars.AGENT_MODEL_PATCH || 'claude-opus-5-5' }}
+            --max-turns 150
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" patch "$PATCH_REASON" "$MISSION_ID" "$PR_NUMBER"
+
+      # A push made with the job's own token runs no workflows: no linter, no Iris re-review, no Radar
+      # label on the crew's commits. HQ hands Patch a one-hour token to push as the HQ App instead
+      # (contents: write on this repo only). Without one (HQ unreachable, or the App not granted Contents:
+      # write) the push still happens with the job's token.
+      - name: Get a push token from HQ
+        id: push
+        run: |
+          if token=$(node .crew/scripts/agents/hq.mjs github-token 2>hq-token.err); then
+            echo "::add-mask::$token"
+            echo "Pushing as the HQ App."
+          else
+            echo "::warning::Pushing with the job's token, so no workflows will run on this push: $(tail -n 1 hq-token.err)"
+            token=""
+          fi
+          rm -f hq-token.err
+          echo "token=${token:-${{ github.token }}}" >> "$GITHUB_OUTPUT"
+
+      - name: Push the fixes and tell HQ
+        env:
+          PUSH_TOKEN: ${{ steps.push.outputs.token }}
+          BRANCH: ${{ steps.pr.outputs.branch }}
+          BASE: ${{ steps.pr.outputs.base }}
+        run: |
+          # Patch's lesson from this failure joins the crew's lessons, so Bolt doesn't make it again.
+          if [ -s agent-out/lesson.md ]; then
+            printf '\n%s\n' "$(cat agent-out/lesson.md)" >> .github/agents/LESSONS.md
+          fi
+          rm -rf agent-out/lesson.md
+          git add -A
+          # A merge with no file changes is still a commit worth pushing (it records the base as merged).
+          if [ ! -f .git/MERGE_HEAD ]; then
+            git diff --cached --quiet && { echo "::error::Patch made no changes"; exit 1; }
+          fi
+          left=$(git diff --cached --name-only -z | xargs -0 -r grep -l -E '^(<<<<<<<|>>>>>>>) ' 2>/dev/null || true)
+          [ -z "$left" ] || { echo "::error::Conflict markers are still in: $left"; exit 1; }
+          case "$PATCH_REASON" in
+            qa) msg='Address QA failures' ;;
+            build) msg='Fix the build' ;;
+            conflicts) msg="Merge $BASE and resolve conflicts" ;;
+            request) msg='Make the requested change' ;;
+            *) msg='Address review feedback' ;;
+          esac
+          git -c user.name="Patch (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "$msg" -m "Agent HQ mission $MISSION_ID"
+          git push -q "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$BRANCH"
+          node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg s "$(cat agent-out/summary.md 2>/dev/null | head -c 1500)" '{agent:"patch",type:"fixed",summary:$s}')"
+
+      - name: Tell HQ it failed
+        if: failure()
+        run: node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg e "The Patch run failed. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{agent:"patch",type:"failed",error:$e}')"
