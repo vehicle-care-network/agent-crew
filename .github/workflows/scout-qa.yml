@@ -224,7 +224,7 @@ jobs:
           fi
 
       - name: Start the app on emulators
-        run: .crew/scripts/scout/start-env.sh
+        run: bash .crew/scripts/scout/start-env.sh
 
       # Specs reused from the previous run need the data their seed scripts create.
       - name: Load seeds from the previous run
@@ -338,7 +338,7 @@ jobs:
 
       - name: Stop the app
         if: always()
-        run: .crew/scripts/scout/stop-env.sh
+        run: bash .crew/scripts/scout/stop-env.sh
 
       # The agent step is continue-on-error so the report still posts; fail the run afterwards so a broken
       # agent (missing key, crash) shows red in the checks instead of a misleading green.
