@@ -42,9 +42,6 @@ on:
         type: string
         default: ''
 
-env:
-  AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
-
 jobs:
   label-pr:
     if: inputs.event == 'pull_request' && inputs.pr_number != ''
@@ -85,6 +82,7 @@ jobs:
       id-token: write
     env:
       MISSION_ID: ${{ fromJSON(inputs.params || '{}').mission_id }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
     steps:
       - uses: actions/checkout@v7
       - uses: vehicle-care-network/agent-crew@v1
@@ -153,6 +151,7 @@ jobs:
       id-token: write
     env:
       SCOPE: ${{ inputs.schedule == '0 15 1 * *' && 'monthly' || fromJSON(inputs.params || '{}').scope || inputs.scope || 'weekly' }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
     steps:
       - uses: actions/checkout@v7
       - name: Set up the crew

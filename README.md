@@ -16,9 +16,8 @@ agent-crew (this repo)                          a repo the crew works in
 ├── briefs/  BOLT IRIS PATCH RADAR (templates)  │   {BOLT,IRIS,PATCH,RADAR,SCOUT}.notes.md (optional)
 ├── scout/   PROMPT.md (template), mcp.json     ├── .github/scout/core-flows.md
 ├── scripts/agents/  hq, usage, impact, …       ├── scripts/scout/seed.mjs, fixtures.mjs
-├── scripts/scout/   report, evidence, env, …   ├── e2e/scout/_support/scout.ts  (re-exports ours + logins)
-├── e2e/_support/scout.ts  Playwright harness   └── e2e/scout/core/*.spec.ts
-└── playwright.scout.config.ts
+├── scripts/scout/   report, evidence, env, …   ├── e2e/scout/_support/scout.ts  (Playwright harness + logins)
+└── playwright.scout.config.ts                  └── e2e/scout/core/*.spec.ts
 ```
 
 ## How a run works
@@ -27,7 +26,7 @@ agent-crew (this repo)                          a repo the crew works in
    input, `params`, a JSON string, so the contract between HQ and the repos never drifts.
 2. The thin workflow calls the reusable one here at a pinned tag.
 3. The reusable workflow checks the repo out, then runs the **setup action** (`action.yml`): it lays this
-   repo's scripts, briefs and harness into `.crew/` in the checkout (kept out of git through
+   repo's scripts, briefs and Playwright config into `.crew/` in the checkout (kept out of git through
    `.git/info/exclude`), and renders the briefs with the repo's `.github/agents/crew.json` and notes.
 4. The agent runs with `.crew/briefs/<AGENT>.md`, reports to HQ with `.crew/scripts/agents/hq.mjs`
    (GitHub OIDC, no HQ secret anywhere), and Bolt and Patch push as the HQ App with a token HQ mints.
@@ -65,8 +64,9 @@ agent-crew (this repo)                          a repo the crew works in
   brief, inserted under "This repo". Keep them short and concrete: conventions the linter can't catch,
   what Scout can log in as, what it can't test here.
 - `.github/agents/risk-map.json` (Radar's impact tiers), `.github/scout/core-flows.md`, the base seed
-  (`scripts/scout/seed.mjs`, `fixtures.mjs`), the Playwright re-export with the repo's login helpers, and
-  the core smoke specs stay in the repo: they describe the product, not the crew.
+  (`scripts/scout/seed.mjs`, `fixtures.mjs`), the Playwright harness with the repo's login helpers
+  (`e2e/scout/_support/scout.ts`; it must compile under the repo's own `tsc`, which is why it isn't shared),
+  and the core smoke specs stay in the repo: they describe the product, not the crew.
 - Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level, labels `agent` and `scout`, the
   HQ GitHub App installed, and branch protection on `main`.
 
