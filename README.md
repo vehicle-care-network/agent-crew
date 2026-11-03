@@ -70,6 +70,13 @@ agent-crew (this repo)                          a repo the crew works in
 - Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level (or on the repo, outside the org),
   labels `agent` and `scout`, the HQ GitHub App installed, and branch protection on `main`.
 
+## Models
+
+Right before each Claude step, the workflow asks HQ which model you chose for that agent (`hq.mjs model
+<agent>`, the **Models** card in HQ's Spend view) and uses it; with no choice saved, or HQ unreachable, the
+repo variable `AGENT_MODEL_<AGENT>` applies, then the workflow's default. A change in HQ reaches the next
+run of every agent in every repo.
+
 ## Releasing the crew
 
 Every change lands on `main` by PR. To release, move the major tag:

@@ -9,6 +9,7 @@
  *   node .crew/scripts/agents/hq.mjs ideas-post <file> <scope>     # sends Radar's ideas
  *   node .crew/scripts/agents/hq.mjs github-token                  # prints a token to push as the HQ App (Bolt, Patch)
  *   node .crew/scripts/agents/hq.mjs qa running|error              # Scout: the run started / broke before results (env PR_NUMBER, HEAD_SHA, RUN_URL)
+ *   node .crew/scripts/agents/hq.mjs model <agent>                 # prints the model chosen for the agent in HQ (empty when none; never fails)
  *
  * Env: AGENT_HQ_URL (default https://agent-hq-cyan.vercel.app), ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
  */
@@ -42,6 +43,29 @@ async function post(path, body) {
   return JSON.parse(text);
 }
 
+if (command === 'model') {
+  // The model you picked for this agent in HQ (Spend › Models). Prints nothing when none is saved or HQ
+  // can't be reached, so the workflow falls back to its repo variable and default. Never fails the job.
+  const agent = missionId;
+  let model = '';
+  try {
+    const { ACTIONS_ID_TOKEN_REQUEST_URL: url, ACTIONS_ID_TOKEN_REQUEST_TOKEN: token } = process.env;
+    const oidc = await fetch(`${url}&audience=agent-hq`, { headers: { Authorization: `bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+    const res = await fetch(`${hq}/api/agents/config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${(await oidc.json()).value}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const chosen = res.ok ? String((await res.json()).model || '') : '';
+    if (/^claude-[a-z0-9-]+$/.test(chosen)) model = chosen;
+  } catch {
+    // fall through: no choice
+  }
+  console.error(`[AgentHq] Model from Agent HQ for ${agent}: ${model || 'none saved'}`);
+  process.stdout.write(model);
+  process.exit(0);
+}
 if (command === 'ideas-known') {
   console.log(JSON.stringify((await post('/api/agents/ideas', { action: 'known' })).fingerprints));
   process.exit(0);

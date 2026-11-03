@@ -242,6 +242,12 @@ jobs:
           set -a; . ./.env.local; set +a
           for f in e2e/scout/_seed/*.mjs; do [ -f "$f" ] && node "$f"; done
 
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        if: steps.scope.outputs.agent == 'true' && steps.build.outputs.ok != 'false'
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model scout)" >> "$GITHUB_OUTPUT"
+
       - name: Scout explores, seeds and writes specs
         id: scout
         if: steps.scope.outputs.agent == 'true' && steps.build.outputs.ok != 'false'
@@ -272,7 +278,7 @@ jobs:
             FLOW BUDGET: ${{ steps.scope.outputs.budget }}
             SPECS FROM THE PREVIOUS RUN: ${{ steps.reuse.outputs.reused == 'true' && 'yes, under e2e/scout' || 'none' }}
           claude_args: |
-            --model ${{ vars.AGENT_MODEL_SCOUT || 'claude-sonnet-5-5' }}
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_SCOUT || 'claude-sonnet-5-5' }}
             --max-turns ${{ steps.scope.outputs.turns }}
             --mcp-config .crew/scout/mcp.json
             --allowedTools Bash,Read,Write,Edit,Glob,Grep,mcp__playwright

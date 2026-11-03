@@ -87,6 +87,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: vehicle-care-network/agent-crew@v1
       - run: mkdir -p radar-out
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model radar)" >> "$GITHUB_OUTPUT"
+
       - name: Radar estimates the impact
         id: claude
         uses: anthropics/claude-code-action@v1
@@ -104,7 +109,7 @@ jobs:
             Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: triage.
             The task is in the environment variable RADAR_TASK.
           claude_args: |
-            --model ${{ vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
             --max-turns 40
             --allowedTools Bash,Read,Glob,Grep,Write
 
@@ -168,6 +173,11 @@ jobs:
           node .crew/scripts/agents/dep-facts.mjs > radar-out/facts.json
           node .crew/scripts/agents/hq.mjs ideas-known > radar-out/known.json
           jq '{majors: (.majors | length), vulnerabilities: (.vulnerabilities | length)}' radar-out/facts.json
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model radar)" >> "$GITHUB_OUTPUT"
+
       - name: Radar audits
         id: claude
         uses: anthropics/claude-code-action@v1
@@ -184,7 +194,7 @@ jobs:
           prompt: |
             Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: audit. RADAR_SCOPE: ${{ env.SCOPE }}.
           claude_args: |
-            --model ${{ vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
             --max-turns 150
             --allowedTools Bash,Read,Glob,Grep,Write,WebFetch
 

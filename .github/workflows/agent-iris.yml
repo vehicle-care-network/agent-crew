@@ -134,6 +134,12 @@ jobs:
           node .crew/scripts/agents/hq.mjs status "$MISSION_ID" iris "Reading the PR."
           ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" iris "" || true; done ) &
 
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        if: steps.scope.outputs.skip != 'true'
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model iris)" >> "$GITHUB_OUTPUT"
+
       - name: Iris reviews
         if: steps.scope.outputs.skip != 'true'
         id: claude
@@ -154,7 +160,7 @@ jobs:
             MISSION_ID: ${{ env.MISSION_ID }}
             INSTRUCTIONS: ${{ env.INSTRUCTIONS }}
           claude_args: |
-            --model ${{ vars.AGENT_MODEL_IRIS || 'claude-opus-5-5' }}
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_IRIS || 'claude-opus-5-5' }}
             --max-turns 120
             --allowedTools Bash,Read,Glob,Grep,Write
 

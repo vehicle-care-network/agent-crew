@@ -38,9 +38,9 @@ jobs:
           case "$PATCH_REASON" in review|qa|build|conflicts|request) ;; *) echo "::error::Unknown reason '$PATCH_REASON'"; exit 1 ;; esac
           gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" > pr.json
           head=$(jq -r .head.ref pr.json)
-          # On its own, Patch only touches the crew's agent/* branches. A request you sent from HQ may target
-          # a developer's branch in this repo (never a fork).
-          if [ "$PATCH_REASON" != request ]; then
+          # On its own, Patch only touches the crew's agent/* branches. A request you sent from HQ, including
+          # resolving conflicts, may target a developer's branch in this repo (never a fork).
+          if [ "$PATCH_REASON" != request ] && [ "$PATCH_REASON" != conflicts ]; then
             case "$head" in agent/*) ;; *) echo "::error::Patch only fixes agent/* branches, not $head"; exit 1 ;; esac
           fi
           [ "$(jq -r .head.repo.full_name pr.json)" = "${{ github.repository }}" ] || { echo "::error::Patch can't push to a fork"; exit 1; }
@@ -51,6 +51,24 @@ jobs:
         with:
           ref: ${{ steps.pr.outputs.branch }}
           fetch-depth: 0
+
+      # Merge conflicts: merge the base branch in without committing, before the crew is set up, so a branch
+      # that predates the crew's config gets it from the base. Clean parts are staged; conflicted files keep
+      # their markers for Patch to resolve (listed in agent-out/conflicts.txt).
+      - name: Merge the base branch in
+        if: env.PATCH_REASON == 'conflicts'
+        env:
+          BASE: ${{ steps.pr.outputs.base }}
+        run: |
+          mkdir -p agent-out
+          git fetch -q origin "$BASE"
+          git -c user.name="Patch (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            merge --no-ff --no-commit "origin/$BASE" || true
+          git diff --name-only --diff-filter=U > agent-out/conflicts.txt
+          echo "Conflicted files:"; cat agent-out/conflicts.txt
+          if [ ! -s agent-out/conflicts.txt ] && [ ! -f .git/MERGE_HEAD ]; then
+            echo "::notice::origin/$BASE is already merged in; nothing to resolve"
+          fi
 
       - name: Set up the crew
         id: crew
@@ -70,21 +88,10 @@ jobs:
           node .crew/scripts/agents/hq.mjs status "$MISSION_ID" patch ""
           ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" patch "" || true; done ) &
 
-      # Merge conflicts: merge the base branch in without committing. Clean parts are staged; conflicted files
-      # keep their markers for Patch to resolve (listed in agent-out/conflicts.txt).
-      - name: Merge the base branch in
-        if: env.PATCH_REASON == 'conflicts'
-        env:
-          BASE: ${{ steps.pr.outputs.base }}
-        run: |
-          git fetch -q origin "$BASE"
-          git -c user.name="Patch (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            merge --no-ff --no-commit "origin/$BASE" || true
-          git diff --name-only --diff-filter=U > agent-out/conflicts.txt
-          echo "Conflicted files:"; cat agent-out/conflicts.txt
-          if [ ! -s agent-out/conflicts.txt ] && [ ! -f .git/MERGE_HEAD ]; then
-            echo "::notice::origin/$BASE is already merged in; nothing to resolve"
-          fi
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model patch)" >> "$GITHUB_OUTPUT"
 
       - name: Patch fixes
         id: claude
@@ -104,7 +111,7 @@ jobs:
             INSTRUCTIONS: ${{ env.INSTRUCTIONS }}
             MISSION_ID: ${{ env.MISSION_ID }}
           claude_args: |
-            --model ${{ vars.AGENT_MODEL_PATCH || 'claude-opus-5-5' }}
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_PATCH || 'claude-opus-5-5' }}
             --max-turns 150
             --allowedTools Bash,Read,Write,Edit,Glob,Grep
 
