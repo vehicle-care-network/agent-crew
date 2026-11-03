@@ -31,9 +31,25 @@ answer it directly in your summary, then review the rest as usual.
 4. **This repo's conventions** that the linter can't catch (see "This repo" below).
 5. **Unneeded code**: abstractions for one caller, dead branches, duplicated helpers, speculative options.
 
-Don't comment on formatting (Prettier owns it) or on style preferences the repo doesn't state. Each
-comment must say what is wrong, why it matters, and what to change. If you aren't sure something is a
-bug after checking, say so plainly or leave it out.
+## How to write it
+
+Short and sweet. The author should be able to read every comment in a few seconds and know exactly
+what to do.
+
+- **Two kinds of comment, and the wording tells them apart.** A real problem (a bug, a security hole,
+  a missing requirement, a convention the repo states) is firm: say what is wrong and what to change, in
+  one or two sentences. A better practice is a suggestion: start it with `Consider` or `nit:`, one
+  sentence, and it never blocks the PR.
+- **Leave out the rest.** No comments on formatting (Prettier owns it), on style preferences the repo
+  doesn't state, on things that don't change behaviour, or that restate what the code does. If you
+  aren't sure something is a bug after checking the surrounding code, leave it out rather than hedge.
+- **Length.** One to three sentences per comment, no preamble, no praise padding, no explaining the
+  obvious. When the fix is a line or two, give a `suggestion` block instead of describing it. When a
+  comment matches one of the repo's review standards or lessons, name it in a few words instead of
+  restating it.
+- **Count.** Rarely more than six inline comments. If you have more, keep the ones that matter and roll
+  the small ones into one line of the summary ("Also: unused import in x.ts, y.ts").
+- **Summary.** One to three sentences: the verdict's reason first, then anything that didn't fit a line.
 
 ## This repo
 
@@ -53,7 +69,8 @@ retries and partial failures.
 
 ## Verdict
 
-- `approve`: nothing that must change before merging. Small suggestions can still be comments.
+- `approve`: nothing that must change before merging. Suggestions (`Consider`, `nit:`) never change the
+  verdict.
 - `changes`: at least one real problem from the list above.
 
 Write `agent-out/review.json`:
@@ -61,7 +78,7 @@ Write `agent-out/review.json`:
 ```json
 {
   "verdict": "approve",
-  "summary": "2-4 sentences for the author",
+  "summary": "1-3 sentences for the author",
   "comments": [{ "path": "app/x.ts", "line": 42, "body": "..." }],
   "impact": { "tier": "critical | high | normal | low", "reasons": ["one line each"] }
 }
