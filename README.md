@@ -67,8 +67,8 @@ agent-crew (this repo)                          a repo the crew works in
   (`scripts/scout/seed.mjs`, `fixtures.mjs`), the Playwright harness with the repo's login helpers
   (`e2e/scout/_support/scout.ts`; it must compile under the repo's own `tsc`, which is why it isn't shared),
   and the core smoke specs stay in the repo: they describe the product, not the crew.
-- Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level, labels `agent` and `scout`, the
-  HQ GitHub App installed, and branch protection on `main`.
+- Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level (or on the repo, outside the org),
+  labels `agent` and `scout`, the HQ GitHub App installed, and branch protection on `main`.
 
 ## Releasing the crew
 
@@ -89,5 +89,9 @@ in a PR, trigger the agent there, then switch the caller back to `@v1` before me
 
 ## Access
 
-Settings → Actions → General → Access is set to "Accessible from repositories in the organization", which
-is what lets other private repos in the org use these workflows and the setup action.
+This repo is public, so any repo on GitHub can call its workflows and its setup action: the org's private
+repos and personal ones such as `kayvannj/bazm-kitchen` alike. It holds no secrets. Claude credentials
+live as org secrets for the org's repos and as repo secrets on repos outside the org (`gh secret set
+CLAUDE_CODE_OAUTH_TOKEN -R owner/repo`); HQ is reached with each run's GitHub OIDC token; the HQ App is
+installed per repo. A repo outside the org also needs its owner on HQ's allowed list
+(`lib/github/oidc.ts` in agent-hq), and branch protection on a private personal repo needs GitHub Pro.
