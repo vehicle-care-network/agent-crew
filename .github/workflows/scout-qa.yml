@@ -153,6 +153,15 @@ jobs:
           HEAD_SHA: ${{ steps.pr.outputs.sha }}
         run: node .crew/scripts/scout/report.mjs --status running
 
+      # HQ learns the result from the run itself (this, then the evidence manifest), not from the comment.
+      - name: Tell HQ Scout started
+        if: env.SCOUT_MODE == 'pr'
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
+        run: node .crew/scripts/agents/hq.mjs qa running
+
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ steps.crew.outputs.node }}

@@ -30,8 +30,28 @@ if (!process.env.SCOUT_HQ_TOKEN && (!ACTIONS_ID_TOKEN_REQUEST_URL || !ACTIONS_ID
   fail('No GitHub OIDC token available; the job needs `permissions: id-token: write`');
 }
 
+async function githubIdToken() {
+  const res = await fetch(`${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agent-hq`, {
+    headers: { Authorization: `bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+  });
+  if (!res.ok) fail(`GitHub refused an OIDC token (${res.status})`);
+  return (await res.json()).value;
+}
+const idToken = process.env.SCOUT_HQ_TOKEN || (await githubIdToken());
+const auth = { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' };
+
 const tests = loadTests(out);
-if (!tests?.length) fail('No Playwright results to send');
+if (!tests?.length) {
+  // Nothing ran (the app or Playwright failed first). Tell HQ so the mission doesn't sit in "testing".
+  if (!regression) {
+    await fetch(`${hq}/api/agents/qa`, { method: 'POST', headers: auth, body: JSON.stringify({ pr, sha: HEAD_SHA, runUrl: RUN_URL, state: 'error' }) }).catch(() => {});
+  }
+  fail('No Playwright results to send');
+}
+
+// Type errors in the PR's own files (the workflow's "Check the build" step): the flows were skipped.
+const buildErrorsPath = `${out}/build-errors.txt`;
+const buildErrors = existsSync(buildErrorsPath) ? readFileSync(buildErrorsPath, 'utf8').split('\n').filter(Boolean).length : 0;
 
 const slug = (s) =>
   s
@@ -112,16 +132,6 @@ const manifestTests = tests.map((t, i) => {
   };
 });
 
-async function githubIdToken() {
-  const res = await fetch(`${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agent-hq`, {
-    headers: { Authorization: `bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
-  });
-  if (!res.ok) fail(`GitHub refused an OIDC token (${res.status})`);
-  return (await res.json()).value;
-}
-const idToken = process.env.SCOUT_HQ_TOKEN || (await githubIdToken());
-const auth = { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' };
-
 const urlRes = await fetch(`${hq}/api/evidence/upload-urls`, {
   method: 'POST',
   headers: auth,
@@ -155,6 +165,9 @@ const manifest = {
     .slice(0, 10)
     .map(cleanBug),
   agentRan: process.env.SCOUT_AGENT_OUTCOME !== 'failure',
+  // HQ decides the PR's QA result from these, the same way report.mjs words the comment.
+  buildErrors,
+  tier: process.env.SCOUT_TIER || '',
   tests: manifestTests.map((t) => ({
     ...t,
     shots: t.shots.map((s) => ({ name: s.name, pathname: byName.get(s.file).pathname })),

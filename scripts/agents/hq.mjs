@@ -8,6 +8,7 @@
  *   node .crew/scripts/agents/hq.mjs ideas-known                   # fingerprints HQ already has (JSON)
  *   node .crew/scripts/agents/hq.mjs ideas-post <file> <scope>     # sends Radar's ideas
  *   node .crew/scripts/agents/hq.mjs github-token                  # prints a token to push as the HQ App (Bolt, Patch)
+ *   node .crew/scripts/agents/hq.mjs qa running|error              # Scout: the run started / broke before results (env PR_NUMBER, HEAD_SHA, RUN_URL)
  *
  * Env: AGENT_HQ_URL (default https://agent-hq-cyan.vercel.app), ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
  */
@@ -48,6 +49,16 @@ if (command === 'ideas-known') {
 if (command === 'github-token') {
   // Only agent-bolt.yml and agent-patch.yml on the default branch get one (HQ checks the OIDC job_workflow_ref).
   process.stdout.write((await post('/api/agents/github-token', {})).token);
+  process.exit(0);
+}
+if (command === 'qa') {
+  // Scout: `qa running` when the run starts, `qa error` when it ends without results. The outcome itself
+  // goes with the evidence manifest (upload-evidence.mjs). Env: PR_NUMBER, HEAD_SHA, RUN_URL.
+  const state = missionId;
+  const pr = Number(process.env.PR_NUMBER);
+  if (!pr) fail('qa needs PR_NUMBER');
+  const res = await post('/api/agents/qa', { pr, sha: process.env.HEAD_SHA || '', runUrl: process.env.RUN_URL || '', state });
+  console.log(`[AgentHq] Told HQ Scout is ${state} on #${pr} (mission ${res.mission})`);
   process.exit(0);
 }
 if (command === 'ideas-post') {
