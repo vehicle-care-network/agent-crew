@@ -8,7 +8,7 @@
  *   node .crew/scripts/agents/hq.mjs ideas-known                   # fingerprints HQ already has (JSON)
  *   node .crew/scripts/agents/hq.mjs ideas-post <file> <scope>     # sends Radar's ideas
  *   node .crew/scripts/agents/hq.mjs github-token                  # prints a token to push as the HQ App (Bolt, Patch)
- *   node .crew/scripts/agents/hq.mjs qa running|error              # Scout: the run started / broke before results (env PR_NUMBER, HEAD_SHA, RUN_URL)
+ *   node .crew/scripts/agents/hq.mjs qa running|error              # Scout: the run started / broke before results (env PR_NUMBER, HEAD_SHA, RUN_URL; MISSION_ID for a smoke test)
  *   node .crew/scripts/agents/hq.mjs model <agent>                 # prints the model chosen for the agent in HQ (empty when none; never fails)
  *
  * Env: AGENT_HQ_URL (default https://agent-hq-cyan.vercel.app), ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
@@ -78,11 +78,13 @@ if (command === 'github-token') {
 if (command === 'qa') {
   // Scout: `qa running` when the run starts, `qa error` when it ends without results. The outcome itself
   // goes with the evidence manifest (upload-evidence.mjs). Env: PR_NUMBER, HEAD_SHA, RUN_URL.
+  // A smoke test on main has no PR: it reports to the HQ mission that started it (MISSION_ID).
   const state = missionId;
-  const pr = Number(process.env.PR_NUMBER);
-  if (!pr) fail('qa needs PR_NUMBER');
-  const res = await post('/api/agents/qa', { pr, sha: process.env.HEAD_SHA || '', runUrl: process.env.RUN_URL || '', state });
-  console.log(`[AgentHq] Told HQ Scout is ${state} on #${pr} (mission ${res.mission})`);
+  const pr = Number(process.env.PR_NUMBER) || 0;
+  const smoke = !pr && process.env.MISSION_ID;
+  if (!pr && !smoke) fail('qa needs PR_NUMBER, or MISSION_ID for a smoke test');
+  const res = await post('/api/agents/qa', { pr, ...(smoke ? { missionId: process.env.MISSION_ID } : {}), sha: process.env.HEAD_SHA || '', runUrl: process.env.RUN_URL || '', state });
+  console.log(`[AgentHq] Told HQ Scout is ${state} on ${pr ? `#${pr}` : 'the smoke test'} (mission ${res.mission})`);
   process.exit(0);
 }
 if (command === 'ideas-post') {

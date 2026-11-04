@@ -20,6 +20,14 @@ agent-crew (this repo)                          a repo the crew works in
 └── playwright.scout.config.ts                  └── e2e/scout/core/*.spec.ts
 ```
 
+## Scout's modes
+
+`pr` tests one pull request and posts on it. `regression` tests the latest main across every flow in
+`.github/scout/core-flows.md` (Radar starts it when enough has merged; HQ's Health card runs it by hand).
+`smoke` runs one scenario HQ hands it (a smoke test saved in HQ, on its schedule: about every 24 hours,
+after each production deploy, or by hand) on main or on the deployed commit, reusing the spec it wrote
+last time; the result goes to the HQ mission that started it, never to a PR.
+
 ## How a run works
 
 1. HQ (or a label, a `/scout` comment, a schedule) starts the repo's thin workflow. HQ always sends one

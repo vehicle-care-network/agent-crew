@@ -22,9 +22,11 @@ function fail(message) {
   process.exit(1);
 }
 
-// PR 0 is a regression run on main (SCOUT_MODE=regression); HQ files it under the repo's health.
+// PR 0 is a run on main: a regression run (SCOUT_MODE=regression), which HQ files under the repo's health,
+// or a smoke test (SCOUT_MODE=smoke), which belongs to the HQ mission that started it (MISSION_ID).
 const regression = process.env.SCOUT_MODE === 'regression';
-if (!hq || !repo || (!pr && !regression)) fail('AGENT_HQ_URL, GITHUB_REPOSITORY and PR_NUMBER are required');
+const smokeMission = process.env.SCOUT_MODE === 'smoke' ? process.env.MISSION_ID || '' : '';
+if (!hq || !repo || (!pr && !regression && !smokeMission)) fail('AGENT_HQ_URL, GITHUB_REPOSITORY and PR_NUMBER (or MISSION_ID for a smoke test) are required');
 // SCOUT_HQ_TOKEN is for local testing against `next dev` only (see agent-hq lib/github/oidc.ts).
 if (!process.env.SCOUT_HQ_TOKEN && (!ACTIONS_ID_TOKEN_REQUEST_URL || !ACTIONS_ID_TOKEN_REQUEST_TOKEN)) {
   fail('No GitHub OIDC token available; the job needs `permissions: id-token: write`');
@@ -44,7 +46,8 @@ const tests = loadTests(out);
 if (!tests?.length) {
   // Nothing ran (the app or Playwright failed first). Tell HQ so the mission doesn't sit in "testing".
   if (!regression) {
-    await fetch(`${hq}/api/agents/qa`, { method: 'POST', headers: auth, body: JSON.stringify({ pr, sha: HEAD_SHA, runUrl: RUN_URL, state: 'error' }) }).catch(() => {});
+    const body = { pr, ...(smokeMission ? { missionId: smokeMission } : {}), sha: HEAD_SHA, runUrl: RUN_URL, state: 'error' };
+    await fetch(`${hq}/api/agents/qa`, { method: 'POST', headers: auth, body: JSON.stringify(body) }).catch(() => {});
   }
   fail('No Playwright results to send');
 }
@@ -156,6 +159,7 @@ const summaryPath = `${out}/summary.md`;
 const manifest = {
   repo,
   pr,
+  ...(smokeMission ? { missionId: smokeMission } : {}),
   sha: HEAD_SHA,
   runUrl: RUN_URL,
   summary: existsSync(summaryPath) ? readFileSync(summaryPath, 'utf8') : '',

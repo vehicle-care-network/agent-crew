@@ -2,8 +2,10 @@ name: Scout QA
 
 # Scout tests a PR the way a user would and posts screenshots, videos and results on the PR. Mode
 # `regression` tests the latest main across every core flow instead of one PR; results go to Agent HQ,
-# failures to its Ideas inbox. Reusable: a repo's `.github/workflows/scout-qa.yml` holds the triggers
-# (the `scout` label, `/scout` comments, manual runs, Agent HQ) and calls this. Brief: scout/PROMPT.md.
+# failures to its Ideas inbox. Mode `smoke` runs one scenario HQ gives it (a saved smoke test, on a
+# schedule or after a production deploy) on main or on the commit HQ names; the result goes to the HQ
+# mission that started it. Reusable: a repo's `.github/workflows/scout-qa.yml` holds the triggers (the
+# `scout` label, `/scout` comments, manual runs, Agent HQ) and calls this. Brief: scout/PROMPT.md.
 #
 # The repo provides: .github/agents/crew.json (scout settings), .github/scout/core-flows.md,
 # scripts/scout/seed.mjs and fixtures.mjs, e2e/scout/_support/scout.ts (the Playwright harness and logins)
@@ -13,7 +15,7 @@ on:
   workflow_call:
     inputs:
       params:
-        description: 'JSON from Agent HQ: { mode: pr|regression, pr_number, focus }. Wins over the inputs below.'
+        description: 'JSON from Agent HQ: { mode: pr|regression|smoke, pr_number, focus, mission_id, scenario_id, sha }. Wins over the inputs below.'
         required: false
         type: string
         default: ''
@@ -65,12 +67,23 @@ jobs:
           COMMENT: ${{ inputs.comment }}
         run: |
           mode=$(jq -r '.mode // empty' <<<"$PARAMS"); mode="${mode:-${IN_MODE:-pr}}"
-          [ "$mode" = regression ] || mode=pr
+          case "$mode" in regression|smoke) ;; *) mode=pr ;; esac
           echo "SCOUT_MODE=$mode" >> "$GITHUB_ENV"
+          # Smoke tests report to the HQ mission that started them (no PR comment).
+          echo "MISSION_ID=$(jq -r '.mission_id // empty' <<<"$PARAMS")" >> "$GITHUB_ENV"
+          echo "SCENARIO_ID=$(jq -r '.scenario_id // empty' <<<"$PARAMS" | tr -cd 'A-Za-z0-9_-')" >> "$GITHUB_ENV"
           # Focus: HQ's, the manual input, or the text after `/scout` on the comment's first line.
           focus=$(jq -r '.focus // empty' <<<"$PARAMS")
           [ -n "$focus" ] || focus="${IN_FOCUS:-$(printf '%s' "$COMMENT" | head -1 | sed -E 's#^/scout[[:space:]]*##')}"
-          if [ "$mode" = regression ]; then
+          if [ "$mode" = smoke ]; then
+            # The commit HQ names (a production deploy's), else the default branch's head.
+            number=0; sha=$(jq -r '.sha // empty' <<<"$PARAMS" | tr -cd 'a-f0-9')
+            if [ -z "$sha" ]; then
+              branch=$(gh api "repos/${{ github.repository }}" --jq .default_branch)
+              sha=$(gh api "repos/${{ github.repository }}/commits/$branch" --jq .sha)
+            fi
+            [ -n "$focus" ] || { echo "::error::A smoke test needs the scenario in focus"; exit 1; }
+          elif [ "$mode" = regression ]; then
             branch=$(gh api "repos/${{ github.repository }}" --jq .default_branch)
             number=0; sha=$(gh api "repos/${{ github.repository }}/commits/$branch" --jq .sha)
           else
@@ -130,6 +143,8 @@ jobs:
         run: |
           if [ "$SCOUT_MODE" = regression ]; then
             tier=regression; agent=true; turns=150; budget="every flow in .github/scout/core-flows.md"
+          elif [ "$SCOUT_MODE" = smoke ]; then
+            tier=smoke; agent=true; turns=60; budget="the smoke-test scenario in SCOUT_FOCUS, and nothing else"
           else
             gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files?per_page=100" --paginate --jq '.[].filename' > changed-files.txt
             tier=$(node .crew/scripts/agents/impact.mjs - < changed-files.txt | jq -r .tier)
@@ -155,7 +170,7 @@ jobs:
 
       # HQ learns the result from the run itself (this, then the evidence manifest), not from the comment.
       - name: Tell HQ Scout started
-        if: env.SCOUT_MODE == 'pr'
+        if: env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke'
         continue-on-error: true
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -220,7 +235,7 @@ jobs:
       - name: Reuse specs from the previous run
         id: reuse
         env:
-          NAME: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || format('pr-{0}', steps.pr.outputs.number) }}
+          NAME: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'smoke' && format('smoke-{0}', env.SCENARIO_ID || env.MISSION_ID) || format('pr-{0}', steps.pr.outputs.number) }}
         run: |
           id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=$NAME&per_page=1" --jq '[.artifacts[] | select(.expired | not)][0].id // empty')
           if [ -n "$id" ]; then
@@ -289,7 +304,7 @@ jobs:
         if: always() && steps.scout.outputs.execution_file != ''
         env:
           HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
-        run: node .crew/scripts/agents/usage.mjs "${{ steps.scout.outputs.execution_file }}" scout "${{ env.SCOUT_MODE == 'regression' && 'regression' || 'qa' }}" "" "${{ steps.pr.outputs.number }}"
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.scout.outputs.execution_file }}" scout "${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'smoke' && 'smoke' || 'qa' }}" "${{ env.MISSION_ID }}" "${{ steps.pr.outputs.number }}"
 
       # The comment's pass/fail comes from this run, not from the agent's own runs: every spec, core and
       # PR-specific, is executed once more against the final state of the tests.
@@ -303,10 +318,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || format('pr-{0}', steps.pr.outputs.number) }}
+          name: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'smoke' && format('smoke-{0}', env.SCENARIO_ID || env.MISSION_ID) || format('pr-{0}', steps.pr.outputs.number) }}
           path: |
             e2e/scout/pr-*.spec.ts
             e2e/scout/regression/
+            e2e/scout/smoke/
             e2e/scout/_seed/
           if-no-files-found: ignore
           retention-days: 30

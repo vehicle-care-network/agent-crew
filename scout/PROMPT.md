@@ -95,6 +95,24 @@ eight things in fifteen. In particular:
 - If the app does not start or the base smoke tests fail, stop and say so in `summary.md`. Results
   after that point would not mean anything.
 
+## Mode `smoke`: one scenario on main, on a schedule
+
+There is no PR. Main (or the production commit HQ named) is checked out, and `SCOUT_FOCUS` holds one
+smoke-test scenario Kayvan wrote: the steps a person would follow and what they expect to see. It runs
+again and again (daily, after each production deploy, by hand), so the spec you write is reused next time.
+
+1. **If a spec from the previous run exists** (`e2e/scout/smoke/*.spec.ts`), run it first. Fix it only if
+   the app legitimately changed; otherwise leave a failure failing and record the bug.
+2. Otherwise seed what the scenario needs (as in step 3 above), explore once if the code doesn't tell you
+   the selectors, and write **one spec** in `e2e/scout/smoke/<short-slug>.spec.ts` that follows the
+   scenario's steps in order, with an `evidence()` call at each step and an assertion for each thing the
+   scenario expects to see. Test the scenario as written, nothing more; the committed core specs run too.
+3. Run `npx playwright test -c .crew/playwright.scout.config.ts e2e/scout/smoke`.
+4. Write `scout-out/bugs.json` for every real failure, with steps a person can follow cold, and
+   `scout-out/summary.md` (short: what the scenario covers, what failed, what you couldn't test). The
+   result goes to the HQ mission for this run; a failure wakes Kayvan up, so don't report a test mistake
+   as a bug.
+
 ## Mode `regression`: the latest main, every core flow
 
 There is no PR. The latest `main` is checked out, and the goal is to catch what broke since the last run.
