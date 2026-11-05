@@ -1,0 +1,137 @@
+name: Agent · Nova
+
+# Nova, the designer. Started by Agent HQ to make the HTML mock a person approves before Bolt builds: the
+# first sketch of a new mission, a revision of an earlier mock with the person's notes, or a redesign of
+# an open PR (she works on that PR's branch, so the mock shows the code as it is now plus the asked-for
+# improvements). She writes nothing outside agent-out/; the mock goes to HQ, never to git.
+# Reusable: a repo's `.github/workflows/agent-nova.yml` is a thin caller of this one. Brief: briefs/NOVA.md.
+
+on:
+  workflow_call:
+    # Named, not inherited: GitHub honours `secrets: inherit` only when the caller is in the crew's own org.
+    # Callers elsewhere (kayvannj/*) pass these two by name; same-org callers may still inherit.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: 'Claude subscription token; preferred'
+        required: false
+      ANTHROPIC_API_KEY:
+        description: 'Claude API key; the fallback when the token is not set'
+        required: false
+    inputs:
+      params:
+        description: 'JSON from Agent HQ: { mission_id, task, feedback, mock_url, pr_number }'
+        required: true
+        type: string
+
+jobs:
+  nova:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    concurrency:
+      group: agent-nova-${{ fromJSON(inputs.params).mission_id }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    env:
+      MISSION_ID: ${{ fromJSON(inputs.params).mission_id }}
+      NOVA_PR_NUMBER: ${{ fromJSON(inputs.params).pr_number }}
+      GH_TOKEN: ${{ github.token }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+    steps:
+      # A redesign of an open PR starts from that PR's branch; everything else from the default branch.
+      - name: Read the request
+        id: req
+        run: |
+          [ -n "$MISSION_ID" ] || { echo "::error::No mission_id in the request"; exit 1; }
+          ref=""
+          if [ -n "$NOVA_PR_NUMBER" ]; then
+            [[ "$NOVA_PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::Bad pr_number '$NOVA_PR_NUMBER'"; exit 1; }
+            gh api "repos/${{ github.repository }}/pulls/$NOVA_PR_NUMBER" > pr.json
+            [ "$(jq -r .head.repo.full_name pr.json)" = "${{ github.repository }}" ] || { echo "::error::Nova only works on branches in this repository, not forks"; exit 1; }
+            [ "$(jq -r .state pr.json)" = open ] || { echo "::error::PR #$NOVA_PR_NUMBER is not open"; exit 1; }
+            ref=$(jq -r .head.ref pr.json)
+            rm -f pr.json
+            echo "Redesigning PR #$NOVA_PR_NUMBER on $ref"
+          else
+            echo "A new design on the default branch"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.req.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Set up the crew
+        id: crew
+        uses: vehicle-care-network/agent-crew@v1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.crew.outputs.node }}
+          cache: npm
+
+      # She reads the real components and styles (and their config), not a running app.
+      - name: Install dependencies
+        run: bash -c "$(jq -r .commands.install .github/agents/crew.json)"
+
+      # An empty status is a heartbeat: it keeps HQ from flagging a long design pass as stalled.
+      - name: Check in with HQ
+        run: |
+          mkdir -p agent-out
+          node .crew/scripts/agents/hq.mjs status "$MISSION_ID" nova ""
+          ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" nova "" || true; done ) &
+
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model nova)" >> "$GITHUB_OUTPUT"
+
+      - name: Nova designs
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          NOVA_TASK: ${{ fromJSON(inputs.params).task }}
+          NOVA_FEEDBACK: ${{ fromJSON(inputs.params).feedback }}
+          NOVA_MOCK_URL: ${{ fromJSON(inputs.params).mock_url }}
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Agent HQ starts these runs as its GitHub App; the action refuses bot-started runs unless listed.
+          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          prompt: |
+            Follow the brief in .crew/briefs/NOVA.md.
+            MISSION_ID: ${{ env.MISSION_ID }}
+            NOVA_PR_NUMBER: ${{ env.NOVA_PR_NUMBER }}
+            The task, feedback and mock link are in the environment variables NOVA_TASK, NOVA_FEEDBACK and NOVA_MOCK_URL.
+          claude_args: |
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_NOVA || 'claude-opus-5-5' }}
+            --max-turns 60
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" nova mock "$MISSION_ID" "$NOVA_PR_NUMBER"
+
+      - name: Send the mock to HQ
+        run: |
+          if [ -s agent-out/blocked.md ]; then echo "::error::Nova is blocked: $(head -c 400 agent-out/blocked.md)"; exit 1; fi
+          test -s agent-out/mock.html || { echo "::error::Nova didn't write agent-out/mock.html"; exit 1; }
+          pathname=$(node .crew/scripts/agents/hq.mjs upload "$MISSION_ID" agent-out/mock.html)
+          notes=$(head -c 2000 agent-out/notes.md 2>/dev/null || true)
+          node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg p "$pathname" --arg n "$notes" '{agent:"nova",type:"mock",pathname:$p,notes:$n}')"
+
+      - name: Tell HQ it failed
+        if: failure()
+        run: |
+          reason=$(cat agent-out/blocked.md 2>/dev/null | head -c 400)
+          node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg e "${reason:-The Nova run failed. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}}" '{agent:"nova",type:"failed",error:$e}')"

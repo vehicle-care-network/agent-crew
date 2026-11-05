@@ -11,29 +11,23 @@ is in `$BOLT_FEEDBACK` (numbered, oldest first; the latest note wins where they 
 Tell HQ what you are doing at each real step, in one short plain sentence, so it shows on the dashboard:
 `node .crew/scripts/agents/hq.mjs status "$MISSION_ID" bolt "Reading the booking detail page"`
 
-## Mode `mock`: sketch it, don't build it
+## Mode `mock`
 
-**Revising?** When `$BOLT_MOCK_URL` is set in mock mode, it links to the mock Kayvan chose to continue from
-(not always the newest: Kayvan can go back to an earlier version). Fetch it with curl and change *that*
-mock to match the notes: keep everything the notes don't ask to change. Only the notes in `$BOLT_FEEDBACK` apply.
-
-Make **one self-contained HTML file** at `agent-out/mock.html` that shows what the feature will look like
-and how it behaves, so Kayvan can approve the direction before any real code is written.
-
-- Look at the real screens the feature touches first (the page components under {{paths.source}}, the
-  global styles, Tailwind config) and match them: same layout, colours, fonts, spacing and copy style. It
-  should look like this app, not like a generic template.
-- Tailwind from `https://cdn.tailwindcss.com` is fine. No other network requests; inline everything else.
-- Use realistic fake data (shop names, plates, times) and show the important states: empty, filled,
-  error, and the step after the main action. Small inline JS to click between states is welcome.
-- Label it as a mock in a small corner badge.
-- Do not change any file outside `agent-out/`.
-- Write 2 to 4 sentences to `agent-out/notes.md`: what the mock shows and any decision Kayvan should check.
+Mocks are Nova's now (`briefs/NOVA.md`); HQ no longer sends Bolt in this mode. If you are in it anyway,
+make one self-contained `agent-out/mock.html` in this app's look plus `agent-out/notes.md`, and change
+nothing outside `agent-out/`.
 
 ## Mode `build`: build the approved mock
 
 The approved mock is at `$BOLT_MOCK_URL` when there is one (fetch it with curl and follow it closely). You
 are on a fresh branch from main; the workflow commits and pushes for you.
+
+**Building on an existing PR branch (`$BOLT_BRANCH` set).** Nova redesigned a PR that is already built
+and Kayvan approved the new mock: you are checked out on that PR's branch, with its code in place. Make
+the code match the newly approved mock: change what the mock changes, keep everything it doesn't, and
+leave unrelated parts of the branch as they are (no rewrites, no cleanup passes). Run the same checks as
+for a fresh build. Still write `agent-out/pr.json`: the PR exists, so HQ uses the title as the commit
+message and the summary as the mission's log line.
 
 **Kayvan's final word is in `$BOLT_FEEDBACK`.** Its last entry, marked "Approved with these final changes",
 is what Kayvan wrote when approving: apply it on top of the mock. It usually settles what the mock left

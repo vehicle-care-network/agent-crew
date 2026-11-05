@@ -1,20 +1,21 @@
 # The agent crew
 
-The crew Agent HQ (https://agent-hq-cyan.vercel.app) runs in every repo it works on: **Bolt** builds,
-**Iris** reviews, **Patch** fixes, **Scout** tests in a browser, **Radar** labels impact, triages and
-audits, **Rocket** lands the finished PRs into a release and ships it. This repo holds the crew once. A repo
-that uses the crew keeps only its own answers (what the product is, how to lint and test it, what Scout can
-log in as) and six thin workflows that call the ones here. Change the crew here, tag a release, and every repo gets it.
+The crew Agent HQ (https://agent-hq-cyan.vercel.app) runs in every repo it works on: **Nova** designs
+the mock, **Bolt** builds, **Iris** reviews, **Patch** fixes, **Scout** tests in a browser, **Radar** labels
+impact, triages and audits, **Rocket** lands the finished PRs into a release and ships it. This repo holds
+the crew once. A repo that uses the crew keeps only its own answers (what the product is, how to lint and
+test it, what Scout can log in as) and seven thin workflows that call the ones here. Change the crew here,
+tag a release, and every repo gets it.
 
 ```
 agent-crew (this repo)                          a repo the crew works in
-├── action.yml          "set up the crew"       ├── .github/workflows/agent-bolt.yml   ─┐
-├── .github/workflows/  reusable workflows      │   agent-iris.yml, agent-patch.yml,    │ thin callers,
-│   agent-bolt.yml, agent-iris.yml,             │   agent-radar.yml, agent-rocket.yml,   │ `uses: …@v1`
-│   agent-patch.yml, agent-radar.yml,           │   scout-qa.yml                       ─┘
-│   agent-rocket.yml, scout-qa.yml                ├── .github/agents/crew.json           the repo's answers
-├── briefs/  BOLT IRIS PATCH RADAR ROCKET         │   risk-map.json, LESSONS.md,
-├── scout/   PROMPT.md (template), mcp.json     │   {BOLT,IRIS,PATCH,RADAR,SCOUT,ROCKET}.notes.md (optional)
+├── action.yml          "set up the crew"       ├── .github/workflows/agent-nova.yml   ─┐
+├── .github/workflows/  reusable workflows      │   agent-bolt.yml, agent-iris.yml,     │ thin callers,
+│   agent-nova.yml, agent-bolt.yml,             │   agent-patch.yml, agent-radar.yml,   │ `uses: …@v1`
+│   agent-iris.yml, agent-patch.yml,            │   agent-rocket.yml, scout-qa.yml     ─┘
+│   agent-radar.yml, agent-rocket.yml,          ├── .github/agents/crew.json           the repo's answers
+│   scout-qa.yml                                │   risk-map.json, LESSONS.md,
+├── briefs/  NOVA BOLT IRIS PATCH RADAR ROCKET  │   {NOVA,BOLT,IRIS,PATCH,RADAR,SCOUT,ROCKET}.notes.md (optional)
 ├── scripts/agents/  hq, usage, impact, …       ├── .github/scout/core-flows.md
 ├── scripts/scout/   report, evidence, env, …   ├── scripts/scout/seed.mjs, fixtures.mjs
 ├── scripts/rocket/    land.mjs (the landing loop) ├── e2e/scout/_support/scout.ts  (Playwright harness + logins)
@@ -29,6 +30,18 @@ or, given a commit and a mission, a release branch Rocket built, reporting to th
 `smoke` runs one scenario HQ hands it (a smoke test saved in HQ, on its schedule: about every 24 hours,
 after each production deploy, or by hand) on main or on the deployed commit, reusing the spec it wrote
 last time; the result goes to the HQ mission that started it, never to a PR.
+
+## Designs: Nova
+
+Every mission that starts with a mock starts with **Nova** (`agent-nova.yml`): HQ sends her the task and
+she makes one self-contained HTML mock in the app's own look (brief: `briefs/NOVA.md`), uploaded to HQ for
+approval. Notes on it send her a revision (`mock_url` is the version to continue from, `feedback` the
+numbered notes); approval sends the mock to Bolt to build. She also redesigns an open PR: given
+`pr_number`, she works on that PR's branch and mocks what it does now plus the asked-for improvements;
+when that mock is approved, HQ sends Bolt with `branch` set to the PR's branch, and Bolt builds the new
+mock on top of the existing code and pushes to the same branch (a plain push, never forced), after which
+the PR goes back through Iris and Scout. A design can also stay a design: HQ keeps it without building.
+Her model is chosen in HQ like the others, else the repo variable `AGENT_MODEL_NOVA`.
 
 ## Releases: Rocket
 
@@ -99,7 +112,7 @@ integration fix, "Fix the integration of #N for <version>".
   testing, HQ records a QA error). The script skips both with a warning if a repo lists them anyway. To
   keep the app under test from calling Claude, leave `ANTHROPIC_API_KEY` out of `scout.env`: Scout's
   environment never sets it.
-- `.github/agents/<AGENT>.notes.md` (BOLT, IRIS, PATCH, RADAR, SCOUT, ROCKET): the repo's own additions to a
+- `.github/agents/<AGENT>.notes.md` (NOVA, BOLT, IRIS, PATCH, RADAR, SCOUT, ROCKET): the repo's own additions to a
   brief, inserted under "This repo". Keep them short and concrete: conventions the linter can't catch,
   what Scout can log in as, what it can't test here.
 - `.github/agents/risk-map.json` (Radar's impact tiers), `.github/scout/core-flows.md`, the base seed

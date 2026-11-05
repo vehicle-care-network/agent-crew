@@ -1,7 +1,9 @@
 name: Agent · Bolt
 
-# Bolt, the implementer. Started by Agent HQ for one mission: either sketch an HTML mock for approval, or
-# build the approved one on a fresh `agent/<mission>` branch. HQ opens the PR; only a person lands it.
+# Bolt, the implementer. Started by Agent HQ for one mission: build the approved mock (Nova's) on a fresh
+# `agent/<mission>` branch, which HQ opens as a PR, or, given `branch`, on that existing PR branch (Nova
+# redesigned a PR and the new mock was approved). Mocks themselves are Nova's; `mode: mock` still works
+# for an older HQ. A person, or Rocket's release, lands the PR.
 # Reusable: a repo's `.github/workflows/agent-bolt.yml` is a thin caller of this one. Brief: briefs/BOLT.md.
 
 on:
@@ -17,7 +19,7 @@ on:
         required: false
     inputs:
       params:
-        description: 'JSON from Agent HQ: { mission_id, mode: mock|build, task, feedback, mock_url }'
+        description: 'JSON from Agent HQ: { mission_id, mode: mock|build, task, feedback, mock_url, branch (an existing PR branch to build on; else a fresh agent/<mission> branch) }'
         required: true
         type: string
 
@@ -34,10 +36,28 @@ jobs:
     env:
       MISSION_ID: ${{ fromJSON(inputs.params).mission_id }}
       BOLT_MODE: ${{ fromJSON(inputs.params).mode }}
+      BOLT_BRANCH: ${{ fromJSON(inputs.params).branch }}
+      GH_TOKEN: ${{ github.token }}
       AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
     steps:
+      # Building on an existing PR branch: it must exist in this repo (never a fork), and Bolt pushes to it.
+      - name: Read the request
+        id: req
+        run: |
+          [ -n "$MISSION_ID" ] || { echo "::error::No mission_id in the request"; exit 1; }
+          if [ -n "$BOLT_BRANCH" ]; then
+            [ "$BOLT_MODE" = build ] || { echo "::error::branch only applies in build mode"; exit 1; }
+            [[ "$BOLT_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::Bad branch '$BOLT_BRANCH'"; exit 1; }
+            gh api "repos/${{ github.repository }}/branches/$BOLT_BRANCH" --jq .name >/dev/null || { echo "::error::No branch $BOLT_BRANCH in ${{ github.repository }}"; exit 1; }
+            echo "Building on the existing branch $BOLT_BRANCH"
+            echo "branch=$BOLT_BRANCH" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=agent/$MISSION_ID" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v7
         with:
+          ref: ${{ env.BOLT_BRANCH }}
           fetch-depth: 0
 
       - name: Set up the crew
@@ -54,7 +74,7 @@ jobs:
         run: bash -c "$(jq -r .commands.install .github/agents/crew.json)"
 
       - name: Start the mission branch
-        if: env.BOLT_MODE == 'build'
+        if: env.BOLT_MODE == 'build' && env.BOLT_BRANCH == ''
         run: git checkout -b "agent/$MISSION_ID"
 
       # An empty status is a heartbeat: it keeps HQ from flagging a long build as stalled.
@@ -89,6 +109,7 @@ jobs:
             Follow the brief in .crew/briefs/BOLT.md.
             MISSION_ID: ${{ env.MISSION_ID }}
             BOLT_MODE: ${{ env.BOLT_MODE }}
+            BOLT_BRANCH: ${{ env.BOLT_BRANCH }}
             The task, feedback and mock link are in the environment variables BOLT_TASK, BOLT_FEEDBACK and BOLT_MOCK_URL.
           claude_args: |
             --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_BOLT || 'claude-opus-5-5' }}
@@ -129,10 +150,13 @@ jobs:
           rm -f hq-token.err
           echo "token=${token:-${{ github.token }}}" >> "$GITHUB_OUTPUT"
 
+      # A fresh mission branch is new on the remote; an existing PR branch gets a plain (never forced) push on
+      # top of what is there, so a commit someone made meanwhile is never lost.
       - name: Push the branch and tell HQ
         if: env.BOLT_MODE == 'build'
         env:
           PUSH_TOKEN: ${{ steps.push.outputs.token }}
+          BRANCH: ${{ steps.req.outputs.branch }}
         run: |
           if [ -s agent-out/blocked.md ]; then echo "::error::Bolt is blocked: $(head -c 400 agent-out/blocked.md)"; exit 1; fi
           test -s agent-out/pr.json || { echo "::error::Bolt didn't write agent-out/pr.json"; exit 1; }
@@ -141,8 +165,8 @@ jobs:
           title=$(jq -r .title agent-out/pr.json)
           git -c user.name="Bolt (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "$title" -m "Agent HQ mission $MISSION_ID"
-          git push -q "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/agent/$MISSION_ID"
-          node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg b "agent/$MISSION_ID" --arg t "$title" --arg s "$(jq -r .summary agent-out/pr.json)" '{agent:"bolt",type:"built",branch:$b,title:$t,summary:$s}')"
+          git push -q "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$BRANCH"
+          node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg b "$BRANCH" --arg t "$title" --arg s "$(jq -r .summary agent-out/pr.json)" '{agent:"bolt",type:"built",branch:$b,title:$t,summary:$s}')"
 
       - name: Tell HQ it failed
         if: failure()
