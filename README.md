@@ -68,6 +68,9 @@ last time; the result goes to the HQ mission that started it, never to a PR.
 
 - `node` is used when the repo has no `.nvmrc`. `commands` are run with `bash -c` from the repo root.
 - `paths` only feed the briefs' prose. `scout.env` values may use `${APP_PORT}`.
+- `scout.blockHosts` is applied runner-wide (`/etc/hosts`), so it must never name Agent HQ itself: Scout
+  reports its verdict there, and a blocked HQ leaves the mission on "Scout is testing" for good. The
+  script skips HQ's host with a warning if a repo lists it anyway.
 - `.github/agents/<AGENT>.notes.md` (BOLT, IRIS, PATCH, RADAR, SCOUT): the repo's own additions to a
   brief, inserted under "This repo". Keep them short and concrete: conventions the linter can't catch,
   what Scout can log in as, what it can't test here.

@@ -378,3 +378,11 @@ jobs:
         run: |
           echo "::error::Scout's agent step failed, so this PR was only smoke-tested. Check that ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is set."
           exit 1
+
+      # HQ learns the verdict from the evidence manifest. If that didn't get through, the PR comment is
+      # posted but the mission stays "Scout is testing": say so loudly instead of a green run.
+      - name: Fail if the result didn't reach HQ
+        if: steps.hq.outcome == 'failure' && (env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke')
+        run: |
+          echo "::error::Scout's result never reached Agent HQ (the evidence step failed), so the mission still shows Scout testing. See the 'Send evidence to Agent HQ' step; when HQ is back, send Scout again from the mission."
+          exit 1

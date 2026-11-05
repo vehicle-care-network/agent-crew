@@ -84,8 +84,22 @@ wait_for() { # url, label, log, seconds
 
 hosts="$(cfg blockHosts)"
 if [ -n "${CI:-}" ] && [ -n "$hosts" ]; then
-  echo "[ScoutEnv] Blocking on this runner: $hosts"
-  for h in $hosts; do echo "0.0.0.0 $h"; done | sudo tee -a /etc/hosts >/dev/null
+  # The block is runner-wide (/etc/hosts), so it would also cut off Scout's own reporting: the evidence
+  # manifest is how HQ learns the verdict, and a blocked HQ leaves the mission "Scout is testing" forever.
+  # Never block HQ's host, whatever crew.json says.
+  hq_host="$(node -e 'process.stdout.write(new URL(process.env.AGENT_HQ_URL || "https://agent-hq-cyan.vercel.app").hostname)')"
+  keep=""
+  for h in $hosts; do
+    case "$h" in
+      "$hq_host"|agent-hq-cyan.vercel.app|vcntools.ai|www.vcntools.ai)
+        echo "::warning::[ScoutEnv] Not blocking $h: it is Agent HQ, and Scout reports there. Remove it from scout.blockHosts in crew.json." ;;
+      *) keep="$keep $h" ;;
+    esac
+  done
+  if [ -n "${keep# }" ]; then
+    echo "[ScoutEnv] Blocking on this runner:${keep}"
+    for h in $keep; do echo "0.0.0.0 $h"; done | sudo tee -a /etc/hosts >/dev/null
+  fi
 fi
 
 # firebase-tools 15 needs Java 21+. With an older JDK locally, override: SCOUT_FIREBASE="npx --yes firebase-tools@13.35.1"
