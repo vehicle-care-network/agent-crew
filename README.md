@@ -78,8 +78,9 @@ last time; the result goes to the HQ mission that started it, never to a PR.
   (`scripts/scout/seed.mjs`, `fixtures.mjs`), the Playwright harness with the repo's login helpers
   (`e2e/scout/_support/scout.ts`; it must compile under the repo's own `tsc`, which is why it isn't shared),
   and the core smoke specs stay in the repo: they describe the product, not the crew.
-- Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level (or on the repo, outside the org),
-  labels `agent` and `scout`, the HQ GitHub App installed, and branch protection on `main`.
+- Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level (or on the repo, outside the org,
+  where the callers must also pass them by name: see Access), labels `agent` and `scout`, the HQ GitHub App
+  installed, and branch protection on `main`.
 
 ## Models
 
@@ -113,3 +114,17 @@ live as org secrets for the org's repos and as repo secrets on repos outside the
 CLAUDE_CODE_OAUTH_TOKEN -R owner/repo`); HQ is reached with each run's GitHub OIDC token; the HQ App is
 installed per repo. A repo outside the org also needs its owner on HQ's allowed list
 (`lib/github/oidc.ts` in agent-hq), and branch protection on a private personal repo needs GitHub Pro.
+
+**Secrets reach the crew only if the caller passes them.** Inside the org, `secrets: inherit` does that.
+Outside the org it passes nothing (GitHub honours `inherit` only within one organization), the Claude
+step sees empty credentials and every agent fails with "Environment variable validation failed", however
+the repo's secret is set. A caller outside the org passes them by name, which works everywhere:
+
+```yaml
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+The reusable workflows declare both under `on.workflow_call.secrets` (optional), so a caller may pass
+either or both. HQ's Setup view flags a caller outside the org that still says `inherit`.

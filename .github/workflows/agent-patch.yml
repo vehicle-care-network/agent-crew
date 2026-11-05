@@ -7,6 +7,15 @@ name: Agent · Patch
 
 on:
   workflow_call:
+    # Named, not inherited: GitHub honours `secrets: inherit` only when the caller is in the crew's own org.
+    # Callers elsewhere (kayvannj/*) pass these two by name; same-org callers may still inherit.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: 'Claude subscription token; preferred'
+        required: false
+      ANTHROPIC_API_KEY:
+        description: 'Claude API key; the fallback when the token is not set'
+        required: false
     inputs:
       params:
         description: 'JSON from Agent HQ: { mission_id, pr_number, reason: review|qa|build|conflicts|request, instructions, round }'
