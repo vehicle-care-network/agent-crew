@@ -84,15 +84,19 @@ wait_for() { # url, label, log, seconds
 
 hosts="$(cfg blockHosts)"
 if [ -n "${CI:-}" ] && [ -n "$hosts" ]; then
-  # The block is runner-wide (/etc/hosts), so it would also cut off Scout's own reporting: the evidence
-  # manifest is how HQ learns the verdict, and a blocked HQ leaves the mission "Scout is testing" forever.
-  # Never block HQ's host, whatever crew.json says.
+  # The block is runner-wide (/etc/hosts), so it would also cut off Scout itself: the evidence manifest is
+  # how HQ learns the verdict (a blocked HQ leaves the mission "Scout is testing" forever), and Scout's own
+  # agent talks to api.anthropic.com (blocked, every run dies with ECONNREFUSED before testing). Never block
+  # either, whatever crew.json says. To keep the app under test from calling Claude, leave ANTHROPIC_API_KEY
+  # out of scout.env instead: Scout's environment never sets it.
   hq_host="$(node -e 'process.stdout.write(new URL(process.env.AGENT_HQ_URL || "https://agent-hq-cyan.vercel.app").hostname)')"
   keep=""
   for h in $hosts; do
     case "$h" in
       "$hq_host"|agent-hq-cyan.vercel.app|vcntools.ai|www.vcntools.ai)
         echo "::warning::[ScoutEnv] Not blocking $h: it is Agent HQ, and Scout reports there. Remove it from scout.blockHosts in crew.json." ;;
+      *.anthropic.com|anthropic.com|claude.ai|*.claude.ai)
+        echo "::warning::[ScoutEnv] Not blocking $h: Scout's own agent runs on Claude. Remove it from scout.blockHosts in crew.json; the app can't call Claude without ANTHROPIC_API_KEY, which Scout never sets." ;;
       *) keep="$keep $h" ;;
     esac
   done
