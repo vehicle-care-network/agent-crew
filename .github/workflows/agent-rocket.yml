@@ -1,12 +1,12 @@
-name: Agent · Dock
+name: Agent · Rocket
 
-# Dock, the lander. Started by Agent HQ when a release is due (on its schedule, or when you press Release
+# Rocket, the lander. Started by Agent HQ when a release is due (on its schedule, or when you press Release
 # in HQ): cuts a release branch from the default branch, merges the crew's finished PRs into it in order,
 # runs the repo's checks after each one, and resolves conflicts and integration breakage on the release
 # branch so every feature survives. A PR it can't make work is left out, with the reason. It pushes the
 # release branch (and the repo's staging branch, when crew.json names one) and tells HQ, which opens the
 # release PR, sends Scout for a regression run on it, and merges it into main once that passes.
-# Reusable: a repo's `.github/workflows/agent-dock.yml` is a thin caller of this one. Brief: briefs/DOCK.md.
+# Reusable: a repo's `.github/workflows/agent-rocket.yml` is a thin caller of this one. Brief: briefs/ROCKET.md.
 
 on:
   workflow_call:
@@ -26,12 +26,12 @@ on:
         type: string
 
 jobs:
-  dock:
+  rocket:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     # One release at a time per repo; a second request waits for the first to finish.
     concurrency:
-      group: agent-dock-${{ github.repository }}
+      group: agent-rocket-${{ github.repository }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -39,9 +39,9 @@ jobs:
       id-token: write
     env:
       MISSION_ID: ${{ fromJSON(inputs.params).mission_id }}
-      DOCK_VERSION: ${{ fromJSON(inputs.params).version }}
-      DOCK_BRANCH: ${{ fromJSON(inputs.params).branch }}
-      DOCK_PRS: ${{ fromJSON(inputs.params).prs }}
+      ROCKET_VERSION: ${{ fromJSON(inputs.params).version }}
+      ROCKET_BRANCH: ${{ fromJSON(inputs.params).branch }}
+      ROCKET_PRS: ${{ fromJSON(inputs.params).prs }}
       GH_TOKEN: ${{ github.token }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
@@ -49,10 +49,10 @@ jobs:
       - name: Read the request
         run: |
           [ -n "$MISSION_ID" ] || { echo "::error::No mission_id in the request"; exit 1; }
-          [[ "$DOCK_VERSION" =~ ^v[0-9][0-9.]*$ ]] || { echo "::error::Bad version '$DOCK_VERSION' (expected v2026.11.05 or v2026.11.05.2)"; exit 1; }
-          [[ "$DOCK_BRANCH" =~ ^release/[A-Za-z0-9._/-]+$ ]] || { echo "::error::Bad branch '$DOCK_BRANCH' (expected release/...)"; exit 1; }
-          [[ "$DOCK_PRS" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "::error::Bad prs '$DOCK_PRS' (expected PR numbers, comma-separated)"; exit 1; }
-          echo "Release $DOCK_VERSION on $DOCK_BRANCH: PRs $DOCK_PRS"
+          [[ "$ROCKET_VERSION" =~ ^v[0-9][0-9.]*$ ]] || { echo "::error::Bad version '$ROCKET_VERSION' (expected v2026.11.05 or v2026.11.05.2)"; exit 1; }
+          [[ "$ROCKET_BRANCH" =~ ^release/[A-Za-z0-9._/-]+$ ]] || { echo "::error::Bad branch '$ROCKET_BRANCH' (expected release/...)"; exit 1; }
+          [[ "$ROCKET_PRS" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "::error::Bad prs '$ROCKET_PRS' (expected PR numbers, comma-separated)"; exit 1; }
+          echo "Release $ROCKET_VERSION on $ROCKET_BRANCH: PRs $ROCKET_PRS"
 
       - uses: actions/checkout@v7
         with:
@@ -73,24 +73,24 @@ jobs:
       - name: Check in with HQ
         run: |
           mkdir -p agent-out
-          node .crew/scripts/agents/hq.mjs status "$MISSION_ID" dock ""
-          ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" dock "" || true; done ) &
+          node .crew/scripts/agents/hq.mjs status "$MISSION_ID" rocket ""
+          ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" rocket "" || true; done ) &
 
       # The deterministic part: cut the branch, merge each PR, run the checks. Stops at the first conflict
-      # or failing check and leaves it for Dock's agent; with none, the agent never runs and costs nothing.
+      # or failing check and leaves it for Rocket's agent; with none, the agent never runs and costs nothing.
       - name: Land the PRs
         id: auto
-        run: node .crew/scripts/dock/land.mjs auto
+        run: node .crew/scripts/rocket/land.mjs auto
 
       - name: Pick the model (set in Agent HQ)
         id: model
-        if: steps.auto.outputs.status == 'needs-dock'
+        if: steps.auto.outputs.status == 'needs-rocket'
         continue-on-error: true
-        run: echo "model=$(node .crew/scripts/agents/hq.mjs model dock)" >> "$GITHUB_OUTPUT"
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model rocket)" >> "$GITHUB_OUTPUT"
 
-      - name: Dock resolves what stopped the landing
+      - name: Rocket resolves what stopped the landing
         id: claude
-        if: steps.auto.outputs.status == 'needs-dock'
+        if: steps.auto.outputs.status == 'needs-rocket'
         # The landing still has to finish and reach HQ when the agent gives up or dies.
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -103,12 +103,12 @@ jobs:
           # Agent HQ starts these runs as its GitHub App; the action refuses bot-started runs unless listed.
           allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
           prompt: |
-            Follow the brief in .crew/briefs/DOCK.md.
+            Follow the brief in .crew/briefs/ROCKET.md.
             MISSION_ID: ${{ env.MISSION_ID }}
-            VERSION: ${{ env.DOCK_VERSION }}
-            BRANCH: ${{ env.DOCK_BRANCH }}
+            VERSION: ${{ env.ROCKET_VERSION }}
+            BRANCH: ${{ env.ROCKET_BRANCH }}
           claude_args: |
-            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_DOCK || 'claude-opus-5-5' }}
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_ROCKET || 'claude-opus-5-5' }}
             --max-turns 200
             --allowedTools Bash,Read,Write,Edit,Glob,Grep
 
@@ -118,16 +118,16 @@ jobs:
         if: always() && steps.claude.outputs.execution_file != ''
         env:
           HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
-        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" dock land "$MISSION_ID" ""
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" rocket land "$MISSION_ID" ""
 
       # Whatever is still stuck is left out of the release with the reason, the remaining PRs land
       # unattended, and the branch is checked for leftover conflict markers.
       - name: Finish the landing
         id: finish
-        run: node .crew/scripts/dock/land.mjs finish
+        run: node .crew/scripts/rocket/land.mjs finish
 
       # A push made with the job's own token runs no workflows on the release branch (no linter, no Vercel
-      # status on the release PR). HQ hands Dock a one-hour token to push as the HQ App instead.
+      # status on the release PR). HQ hands Rocket a one-hour token to push as the HQ App instead.
       - name: Get a push token from HQ
         id: push
         run: |
@@ -146,17 +146,17 @@ jobs:
         env:
           PUSH_TOKEN: ${{ steps.push.outputs.token }}
         run: |
-          # Dock's lesson from this landing joins the crew's lessons, so Bolt doesn't make it again.
+          # Rocket's lesson from this landing joins the crew's lessons, so Bolt doesn't make it again.
           if [ -s agent-out/lesson.md ]; then
             printf '\n%s\n' "$(cat agent-out/lesson.md)" >> .github/agents/LESSONS.md
             git add .github/agents/LESSONS.md
-            git -c user.name="Dock (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -q -m "Add Dock's lesson from $DOCK_VERSION" -m "Agent HQ mission $MISSION_ID"
+            git -c user.name="Rocket (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Add Rocket's lesson from $ROCKET_VERSION" -m "Agent HQ mission $MISSION_ID"
           fi
           rm -rf agent-out/lesson.md
           remote="https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git"
-          git push -q -f "$remote" "HEAD:refs/heads/$DOCK_BRANCH"
-          echo "Pushed $DOCK_BRANCH at $(git rev-parse --short HEAD)"
+          git push -q -f "$remote" "HEAD:refs/heads/$ROCKET_BRANCH"
+          echo "Pushed $ROCKET_BRANCH at $(git rev-parse --short HEAD)"
           # The repo's staging branch (crew.json release.stagingBranch) follows the release, so its staging
           # site shows what is about to ship.
           staging=$(jq -r '.release.stagingBranch // empty' .github/agents/crew.json)
@@ -177,16 +177,16 @@ jobs:
             --arg staging "$STAGING" \
             --arg summary "$(head -c 1500 agent-out/summary.md 2>/dev/null || true)" \
             '{
-              agent: "dock", type: "landed",
+              agent: "rocket", type: "landed",
               version: .version, branch: .branch, sha: $sha, base: .base,
               landed: [.prs[] | select(.status == "landed") | { pr, title, sha }],
               dropped: [.prs[] | select(.status == "dropped") | { pr, reason }],
               skipped: [.prs[] | select(.status == "skipped") | { pr, reason }],
               staging: (if $staging == "" then null else $staging end),
               summary: $summary
-            }' agent-out/dock.json)
+            }' agent-out/rocket.json)
           node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$report"
 
       - name: Tell HQ it failed
         if: failure()
-        run: node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg e "The Dock run failed. See $RUN_URL" '{agent:"dock",type:"failed",error:$e}')"
+        run: node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg e "The Rocket run failed. See $RUN_URL" '{agent:"rocket",type:"failed",error:$e}')"

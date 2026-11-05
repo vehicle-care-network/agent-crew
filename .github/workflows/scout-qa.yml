@@ -2,7 +2,7 @@ name: Scout QA
 
 # Scout tests a PR the way a user would and posts screenshots, videos and results on the PR. Mode
 # `regression` tests the latest main across every core flow instead of one PR; results go to Agent HQ,
-# failures to its Ideas inbox. Given a `sha` and a `mission_id` (a release branch Dock built), the same
+# failures to its Ideas inbox. Given a `sha` and a `mission_id` (a release branch Rocket built), the same
 # run reports to that release mission instead of the repo's health. Mode `smoke` runs one scenario HQ gives it (a saved smoke test, on a
 # schedule or after a production deploy) on main or on the commit HQ names; the result goes to the HQ
 # mission that started it. Reusable: a repo's `.github/workflows/scout-qa.yml` holds the triggers (the

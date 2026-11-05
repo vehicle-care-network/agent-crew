@@ -116,7 +116,7 @@ again and again (daily, after each production deploy, by hand), so the spec you 
 ## Mode `regression`: the latest main, every core flow
 
 There is no PR. The latest `main` is checked out, and the goal is to catch what broke since the last run.
-(When HQ names a commit, it is a release branch Dock built from the crew's finished PRs: the same job,
+(When HQ names a commit, it is a release branch Rocket built from the crew's finished PRs: the same job,
 and the result decides whether that release merges into main.)
 
 1. Go through every flow in `.github/scout/core-flows.md`. Committed specs in `e2e/scout/core/` already
