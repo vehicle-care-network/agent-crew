@@ -35,6 +35,11 @@ and how it behaves, so Kayvan can approve the direction before any real code is 
 The approved mock is at `$BOLT_MOCK_URL` when there is one (fetch it with curl and follow it closely). You
 are on a fresh branch from main; the workflow commits and pushes for you.
 
+**Kayvan's final word is in `$BOLT_FEEDBACK`.** Its last entry, marked "Approved with these final changes",
+is what Kayvan wrote when approving: apply it on top of the mock. It usually settles what the mock left
+open, such as which of several options to build. When the mock shows several options and no note picks
+one, build the one the mock marks as recommended or lists first, say so in the PR, and don't block.
+
 1. **Plan before coding.** Find where the change belongs: existing components under {{paths.source}},
    the data layer, models in `{{paths.models}}`. Prefer extending what exists over adding parallel
    versions. Write no code the task doesn't need: no speculative options, no abstractions for one
