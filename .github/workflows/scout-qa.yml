@@ -2,7 +2,8 @@ name: Scout QA
 
 # Scout tests a PR the way a user would and posts screenshots, videos and results on the PR. Mode
 # `regression` tests the latest main across every core flow instead of one PR; results go to Agent HQ,
-# failures to its Ideas inbox. Mode `smoke` runs one scenario HQ gives it (a saved smoke test, on a
+# failures to its Ideas inbox. Given a `sha` and a `mission_id` (a release branch Dock built), the same
+# run reports to that release mission instead of the repo's health. Mode `smoke` runs one scenario HQ gives it (a saved smoke test, on a
 # schedule or after a production deploy) on main or on the commit HQ names; the result goes to the HQ
 # mission that started it. Reusable: a repo's `.github/workflows/scout-qa.yml` holds the triggers (the
 # `scout` label, `/scout` comments, manual runs, Agent HQ) and calls this. Brief: scout/PROMPT.md.
@@ -24,7 +25,7 @@ on:
         required: false
     inputs:
       params:
-        description: 'JSON from Agent HQ: { mode: pr|regression|smoke, pr_number, focus, mission_id, scenario_id, sha }. Wins over the inputs below.'
+        description: 'JSON from Agent HQ: { mode: pr|regression|smoke, pr_number, focus, mission_id, scenario_id, sha }. Wins over the inputs below. regression with sha + mission_id: a release branch, reporting to that mission.'
         required: false
         type: string
         default: ''
@@ -93,8 +94,13 @@ jobs:
             fi
             [ -n "$focus" ] || { echo "::error::A smoke test needs the scenario in focus"; exit 1; }
           elif [ "$mode" = regression ]; then
-            branch=$(gh api "repos/${{ github.repository }}" --jq .default_branch)
-            number=0; sha=$(gh api "repos/${{ github.repository }}/commits/$branch" --jq .sha)
+            # The commit HQ names (a release branch's head, reporting to the release mission), else the
+            # default branch's head (the repo's health).
+            number=0; sha=$(jq -r '.sha // empty' <<<"$PARAMS" | tr -cd 'a-f0-9')
+            if [ -z "$sha" ]; then
+              branch=$(gh api "repos/${{ github.repository }}" --jq .default_branch)
+              sha=$(gh api "repos/${{ github.repository }}/commits/$branch" --jq .sha)
+            fi
           else
             number=$(jq -r '.pr_number // empty' <<<"$PARAMS"); number="${number:-$IN_PR}"
             [ -n "$number" ] || { echo "::error::No PR number in the request"; exit 1; }
@@ -189,8 +195,9 @@ jobs:
         run: node .crew/scripts/scout/report.mjs --status running
 
       # HQ learns the result from the run itself (this, then the evidence manifest), not from the comment.
+      # A regression run HQ started for a release mission reports to it like a smoke test does.
       - name: Tell HQ Scout started
-        if: env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke'
+        if: env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke' || (env.SCOUT_MODE == 'regression' && env.MISSION_ID != '')
         continue-on-error: true
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -406,7 +413,7 @@ jobs:
       # HQ learns the verdict from the evidence manifest. If that didn't get through, the PR comment is
       # posted but the mission stays "Scout is testing": say so loudly instead of a green run.
       - name: Fail if the result didn't reach HQ
-        if: steps.hq.outcome == 'failure' && (env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke')
+        if: steps.hq.outcome == 'failure' && (env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke' || (env.SCOUT_MODE == 'regression' && env.MISSION_ID != ''))
         run: |
           echo "::error::Scout's result never reached Agent HQ (the evidence step failed), so the mission still shows Scout testing. See the 'Send evidence to Agent HQ' step; when HQ is back, send Scout again from the mission."
           exit 1

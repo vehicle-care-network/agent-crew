@@ -2,31 +2,56 @@
 
 The crew Agent HQ (https://agent-hq-cyan.vercel.app) runs in every repo it works on: **Bolt** builds,
 **Iris** reviews, **Patch** fixes, **Scout** tests in a browser, **Radar** labels impact, triages and
-audits. This repo holds the crew once. A repo that uses the crew keeps only its own answers (what the
-product is, how to lint and test it, what Scout can log in as) and five thin workflows that call the ones
-here. Change the crew here, tag a release, and every repo gets it.
+audits, **Dock** lands the finished PRs into a release and ships it. This repo holds the crew once. A repo
+that uses the crew keeps only its own answers (what the product is, how to lint and test it, what Scout can
+log in as) and six thin workflows that call the ones here. Change the crew here, tag a release, and every repo gets it.
 
 ```
 agent-crew (this repo)                          a repo the crew works in
 ├── action.yml          "set up the crew"       ├── .github/workflows/agent-bolt.yml   ─┐
 ├── .github/workflows/  reusable workflows      │   agent-iris.yml, agent-patch.yml,    │ thin callers,
-│   agent-bolt.yml, agent-iris.yml,             │   agent-radar.yml, scout-qa.yml      ─┘ `uses: …@v1`
-│   agent-patch.yml, agent-radar.yml,           ├── .github/agents/crew.json           the repo's answers
-│   scout-qa.yml                                │   risk-map.json, LESSONS.md,
-├── briefs/  BOLT IRIS PATCH RADAR (templates)  │   {BOLT,IRIS,PATCH,RADAR,SCOUT}.notes.md (optional)
-├── scout/   PROMPT.md (template), mcp.json     ├── .github/scout/core-flows.md
-├── scripts/agents/  hq, usage, impact, …       ├── scripts/scout/seed.mjs, fixtures.mjs
-├── scripts/scout/   report, evidence, env, …   ├── e2e/scout/_support/scout.ts  (Playwright harness + logins)
+│   agent-bolt.yml, agent-iris.yml,             │   agent-radar.yml, agent-dock.yml,   │ `uses: …@v1`
+│   agent-patch.yml, agent-radar.yml,           │   scout-qa.yml                       ─┘
+│   agent-dock.yml, scout-qa.yml                ├── .github/agents/crew.json           the repo's answers
+├── briefs/  BOLT IRIS PATCH RADAR DOCK         │   risk-map.json, LESSONS.md,
+├── scout/   PROMPT.md (template), mcp.json     │   {BOLT,IRIS,PATCH,RADAR,SCOUT,DOCK}.notes.md (optional)
+├── scripts/agents/  hq, usage, impact, …       ├── .github/scout/core-flows.md
+├── scripts/scout/   report, evidence, env, …   ├── scripts/scout/seed.mjs, fixtures.mjs
+├── scripts/dock/    land.mjs (the landing loop) ├── e2e/scout/_support/scout.ts  (Playwright harness + logins)
 └── playwright.scout.config.ts                  └── e2e/scout/core/*.spec.ts
 ```
 
 ## Scout's modes
 
 `pr` tests one pull request and posts on it. `regression` tests the latest main across every flow in
-`.github/scout/core-flows.md` (Radar starts it when enough has merged; HQ's Health card runs it by hand).
+`.github/scout/core-flows.md` (Radar starts it when enough has merged; HQ's Health card runs it by hand),
+or, given a commit and a mission, a release branch Dock built, reporting to that release in HQ.
 `smoke` runs one scenario HQ hands it (a smoke test saved in HQ, on its schedule: about every 24 hours,
 after each production deploy, or by hand) on main or on the deployed commit, reusing the spec it wrote
 last time; the result goes to the HQ mission that started it, never to a PR.
+
+## Releases: Dock
+
+A release is a batch of the crew's finished PRs (Iris approved, Scout passed, checks green, no conflicts)
+landed together. HQ starts one on its schedule, or when you press Release there, and sends **Dock**
+(`agent-dock.yml`) the PRs in landing order. Dock cuts `release/<version>` from the default branch
+(`version` is `v2026.11.05`, then `.2`, `.3` for later releases the same day), merges each PR into it with a
+merge commit, and runs the repo's `typecheck`, `lint` and `test` after every one. Clean merges need no
+agent and cost nothing. A conflict or a failing check brings in Dock's agent (brief: `briefs/DOCK.md`),
+which resolves it on the release branch keeping both PRs' behaviour; a PR it can't make work is left out
+with a reason the person reads on its mission. Dock pushes the release branch, and the repo's staging
+branch too when `crew.json` names one:
+
+```json
+  "release": { "stagingBranch": "staging" }
+```
+
+HQ then opens the release PR, sends Scout for a regression run on it (`mode: regression` with the branch's
+`sha` and the release's `mission_id`), and once that passes merges the release PR into main with a merge
+commit (so GitHub marks every landed PR merged), tags it and publishes a GitHub Release. A failed regression
+holds the release for you and files the failures as Ideas. Dock's model is chosen in HQ like the others,
+else the repo variable `AGENT_MODEL_DOCK`. Dock's commits are "Land #N: <title>" and, after an
+integration fix, "Fix the integration of #N for <version>".
 
 ## How a run works
 
@@ -74,7 +99,7 @@ last time; the result goes to the HQ mission that started it, never to a PR.
   testing, HQ records a QA error). The script skips both with a warning if a repo lists them anyway. To
   keep the app under test from calling Claude, leave `ANTHROPIC_API_KEY` out of `scout.env`: Scout's
   environment never sets it.
-- `.github/agents/<AGENT>.notes.md` (BOLT, IRIS, PATCH, RADAR, SCOUT): the repo's own additions to a
+- `.github/agents/<AGENT>.notes.md` (BOLT, IRIS, PATCH, RADAR, SCOUT, DOCK): the repo's own additions to a
   brief, inserted under "This repo". Keep them short and concrete: conventions the linter can't catch,
   what Scout can log in as, what it can't test here.
 - `.github/agents/risk-map.json` (Radar's impact tiers), `.github/scout/core-flows.md`, the base seed
@@ -84,6 +109,8 @@ last time; the result goes to the HQ mission that started it, never to a PR.
   the core specs, seed and config from `main` (a PR can't weaken what they check) but the harness from the
   PR when it has one: a PR that changes the header fixes the sign-in helper in the same PR, and a Patch fix
   to it takes effect.
+- `release.stagingBranch` (optional): the branch Dock also force-pushes each release to, so the repo's
+  staging site shows what is about to ship.
 - Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level (or on the repo, outside the org,
   where the callers must also pass them by name: see Access), labels `agent` and `scout`, the HQ GitHub App
   installed, and branch protection on `main`.

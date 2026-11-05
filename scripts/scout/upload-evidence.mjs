@@ -22,10 +22,11 @@ function fail(message) {
   process.exit(1);
 }
 
-// PR 0 is a run on main: a regression run (SCOUT_MODE=regression), which HQ files under the repo's health,
-// or a smoke test (SCOUT_MODE=smoke), which belongs to the HQ mission that started it (MISSION_ID).
+// PR 0 is a run with no PR: a regression run on main (SCOUT_MODE=regression), which HQ files under the
+// repo's health, or a run that belongs to the HQ mission that started it (MISSION_ID): a smoke test
+// (SCOUT_MODE=smoke), or a regression run on a release branch.
 const regression = process.env.SCOUT_MODE === 'regression';
-const smokeMission = process.env.SCOUT_MODE === 'smoke' ? process.env.MISSION_ID || '' : '';
+const smokeMission = process.env.SCOUT_MODE === 'smoke' || regression ? process.env.MISSION_ID || '' : '';
 if (!hq || !repo || (!pr && !regression && !smokeMission)) fail('AGENT_HQ_URL, GITHUB_REPOSITORY and PR_NUMBER (or MISSION_ID for a smoke test) are required');
 // SCOUT_HQ_TOKEN is for local testing against `next dev` only (see agent-hq lib/github/oidc.ts).
 if (!process.env.SCOUT_HQ_TOKEN && (!ACTIONS_ID_TOKEN_REQUEST_URL || !ACTIONS_ID_TOKEN_REQUEST_TOKEN)) {
@@ -45,7 +46,7 @@ const auth = { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/
 const tests = loadTests(out);
 if (!tests?.length) {
   // Nothing ran (the app or Playwright failed first). Tell HQ so the mission doesn't sit in "testing".
-  if (!regression) {
+  if (!regression || smokeMission) {
     const body = { pr, ...(smokeMission ? { missionId: smokeMission } : {}), sha: HEAD_SHA, runUrl: RUN_URL, state: 'error' };
     await fetch(`${hq}/api/agents/qa`, { method: 'POST', headers: auth, body: JSON.stringify(body) }).catch(() => {});
   }

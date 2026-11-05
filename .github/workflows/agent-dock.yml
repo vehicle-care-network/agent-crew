@@ -1,0 +1,192 @@
+name: Agent · Dock
+
+# Dock, the lander. Started by Agent HQ when a release is due (on its schedule, or when you press Release
+# in HQ): cuts a release branch from the default branch, merges the crew's finished PRs into it in order,
+# runs the repo's checks after each one, and resolves conflicts and integration breakage on the release
+# branch so every feature survives. A PR it can't make work is left out, with the reason. It pushes the
+# release branch (and the repo's staging branch, when crew.json names one) and tells HQ, which opens the
+# release PR, sends Scout for a regression run on it, and merges it into main once that passes.
+# Reusable: a repo's `.github/workflows/agent-dock.yml` is a thin caller of this one. Brief: briefs/DOCK.md.
+
+on:
+  workflow_call:
+    # Named, not inherited: GitHub honours `secrets: inherit` only when the caller is in the crew's own org.
+    # Callers elsewhere (kayvannj/*) pass these two by name; same-org callers may still inherit.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: 'Claude subscription token; preferred'
+        required: false
+      ANTHROPIC_API_KEY:
+        description: 'Claude API key; the fallback when the token is not set'
+        required: false
+    inputs:
+      params:
+        description: 'JSON from Agent HQ: { mission_id, version, branch, prs: "133,134" (landing order) }'
+        required: true
+        type: string
+
+jobs:
+  dock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    # One release at a time per repo; a second request waits for the first to finish.
+    concurrency:
+      group: agent-dock-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    env:
+      MISSION_ID: ${{ fromJSON(inputs.params).mission_id }}
+      DOCK_VERSION: ${{ fromJSON(inputs.params).version }}
+      DOCK_BRANCH: ${{ fromJSON(inputs.params).branch }}
+      DOCK_PRS: ${{ fromJSON(inputs.params).prs }}
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+    steps:
+      - name: Read the request
+        run: |
+          [ -n "$MISSION_ID" ] || { echo "::error::No mission_id in the request"; exit 1; }
+          [[ "$DOCK_VERSION" =~ ^v[0-9][0-9.]*$ ]] || { echo "::error::Bad version '$DOCK_VERSION' (expected v2026.11.05 or v2026.11.05.2)"; exit 1; }
+          [[ "$DOCK_BRANCH" =~ ^release/[A-Za-z0-9._/-]+$ ]] || { echo "::error::Bad branch '$DOCK_BRANCH' (expected release/...)"; exit 1; }
+          [[ "$DOCK_PRS" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "::error::Bad prs '$DOCK_PRS' (expected PR numbers, comma-separated)"; exit 1; }
+          echo "Release $DOCK_VERSION on $DOCK_BRANCH: PRs $DOCK_PRS"
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up the crew
+        id: crew
+        uses: vehicle-care-network/agent-crew@v1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.crew.outputs.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: bash -c "$(jq -r .commands.install .github/agents/crew.json)"
+
+      - name: Check in with HQ
+        run: |
+          mkdir -p agent-out
+          node .crew/scripts/agents/hq.mjs status "$MISSION_ID" dock ""
+          ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" dock "" || true; done ) &
+
+      # The deterministic part: cut the branch, merge each PR, run the checks. Stops at the first conflict
+      # or failing check and leaves it for Dock's agent; with none, the agent never runs and costs nothing.
+      - name: Land the PRs
+        id: auto
+        run: node .crew/scripts/dock/land.mjs auto
+
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        if: steps.auto.outputs.status == 'needs-dock'
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model dock)" >> "$GITHUB_OUTPUT"
+
+      - name: Dock resolves what stopped the landing
+        id: claude
+        if: steps.auto.outputs.status == 'needs-dock'
+        # The landing still has to finish and reach HQ when the agent gives up or dies.
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Agent HQ starts these runs as its GitHub App; the action refuses bot-started runs unless listed.
+          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          prompt: |
+            Follow the brief in .crew/briefs/DOCK.md.
+            MISSION_ID: ${{ env.MISSION_ID }}
+            VERSION: ${{ env.DOCK_VERSION }}
+            BRANCH: ${{ env.DOCK_BRANCH }}
+          claude_args: |
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_DOCK || 'claude-opus-5-5' }}
+            --max-turns 200
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" dock land "$MISSION_ID" ""
+
+      # Whatever is still stuck is left out of the release with the reason, the remaining PRs land
+      # unattended, and the branch is checked for leftover conflict markers.
+      - name: Finish the landing
+        id: finish
+        run: node .crew/scripts/dock/land.mjs finish
+
+      # A push made with the job's own token runs no workflows on the release branch (no linter, no Vercel
+      # status on the release PR). HQ hands Dock a one-hour token to push as the HQ App instead.
+      - name: Get a push token from HQ
+        id: push
+        run: |
+          if token=$(node .crew/scripts/agents/hq.mjs github-token 2>hq-token.err); then
+            echo "::add-mask::$token"
+            echo "Pushing as the HQ App."
+          else
+            echo "::warning::Pushing with the job's token, so no workflows will run on this push: $(tail -n 1 hq-token.err)"
+            token=""
+          fi
+          rm -f hq-token.err
+          echo "token=${token:-${{ github.token }}}" >> "$GITHUB_OUTPUT"
+
+      - name: Push the release branch
+        id: pushed
+        env:
+          PUSH_TOKEN: ${{ steps.push.outputs.token }}
+        run: |
+          # Dock's lesson from this landing joins the crew's lessons, so Bolt doesn't make it again.
+          if [ -s agent-out/lesson.md ]; then
+            printf '\n%s\n' "$(cat agent-out/lesson.md)" >> .github/agents/LESSONS.md
+            git add .github/agents/LESSONS.md
+            git -c user.name="Dock (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Add Dock's lesson from $DOCK_VERSION" -m "Agent HQ mission $MISSION_ID"
+          fi
+          rm -rf agent-out/lesson.md
+          remote="https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git"
+          git push -q -f "$remote" "HEAD:refs/heads/$DOCK_BRANCH"
+          echo "Pushed $DOCK_BRANCH at $(git rev-parse --short HEAD)"
+          # The repo's staging branch (crew.json release.stagingBranch) follows the release, so its staging
+          # site shows what is about to ship.
+          staging=$(jq -r '.release.stagingBranch // empty' .github/agents/crew.json)
+          if [ -n "$staging" ]; then
+            git push -q -f "$remote" "HEAD:refs/heads/$staging"
+            echo "Pushed $staging too"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "staging=$staging" >> "$GITHUB_OUTPUT"
+
+      - name: Tell HQ what landed
+        env:
+          SHA: ${{ steps.pushed.outputs.sha }}
+          STAGING: ${{ steps.pushed.outputs.staging }}
+        run: |
+          report=$(jq -c \
+            --arg sha "$SHA" \
+            --arg staging "$STAGING" \
+            --arg summary "$(head -c 1500 agent-out/summary.md 2>/dev/null || true)" \
+            '{
+              agent: "dock", type: "landed",
+              version: .version, branch: .branch, sha: $sha, base: .base,
+              landed: [.prs[] | select(.status == "landed") | { pr, title, sha }],
+              dropped: [.prs[] | select(.status == "dropped") | { pr, reason }],
+              skipped: [.prs[] | select(.status == "skipped") | { pr, reason }],
+              staging: (if $staging == "" then null else $staging end),
+              summary: $summary
+            }' agent-out/dock.json)
+          node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$report"
+
+      - name: Tell HQ it failed
+        if: failure()
+        run: node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg e "The Dock run failed. See $RUN_URL" '{agent:"dock",type:"failed",error:$e}')"
