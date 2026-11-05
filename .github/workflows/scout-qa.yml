@@ -114,8 +114,9 @@ jobs:
           fetch-depth: 0
 
       # Branches opened before Scout's data existed don't contain it, so take the repo's Scout pieces
-      # (crew.json, risk map, core flows, seed, harness, core specs) from the commit this run was started
-      # from (main for comments, HQ and manual runs) and lay them over the PR's code.
+      # (crew.json, risk map, core flows, seed, core specs) from the commit this run was started from (main
+      # for comments, HQ and manual runs) and lay them over the PR's code. The harness is the exception: it
+      # must match the UI under test, so the PR's copy wins when it has one (see the install step).
       - name: Fetch the repo's Scout pieces
         uses: actions/checkout@v7
         with:
@@ -135,7 +136,17 @@ jobs:
           cp -R .scout-tooling/.github/agents/. .github/agents/
           cp -R .scout-tooling/.github/scout/. .github/scout/
           cp -R .scout-tooling/scripts/scout/. scripts/scout/
-          cp -R .scout-tooling/e2e/scout/_support .scout-tooling/e2e/scout/core e2e/scout/
+          cp -R .scout-tooling/e2e/scout/core e2e/scout/
+          # The harness (sign-in helper, evidence) has to match the UI under test, so the PR's copy wins when
+          # the PR has one: a PR that changes the header fixes the sign-in helper in the same PR, and a Patch
+          # fix to it takes effect (main's copy laid over the PR made every core flow fail at sign-in after a
+          # header change, run after run, with nothing Patch could do). The core specs still come from main,
+          # so a PR can't weaken what they check; Iris reviews the harness like any other code.
+          if [ -f e2e/scout/_support/scout.ts ]; then
+            echo "[Scout] Using this PR's harness (e2e/scout/_support)"
+          else
+            cp -R .scout-tooling/e2e/scout/_support e2e/scout/
+          fi
           rm -rf .scout-tooling
 
       - name: Set up the crew
@@ -328,8 +339,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'smoke' && format('smoke-{0}', env.SCENARIO_ID || env.MISSION_ID) || format('pr-{0}', steps.pr.outputs.number) }}
+          # Everything Scout wrote for this PR, not just the specs: a helper module a spec imports
+          # (`pr-8-login.ts`) left behind makes every reused spec fail to load, and the run ends with no
+          # results at all.
           path: |
-            e2e/scout/pr-*.spec.ts
+            e2e/scout/pr-*
+            e2e/scout/pr-*/**
             e2e/scout/regression/
             e2e/scout/smoke/
             e2e/scout/_seed/

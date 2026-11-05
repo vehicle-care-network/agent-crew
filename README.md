@@ -80,7 +80,10 @@ last time; the result goes to the HQ mission that started it, never to a PR.
 - `.github/agents/risk-map.json` (Radar's impact tiers), `.github/scout/core-flows.md`, the base seed
   (`scripts/scout/seed.mjs`, `fixtures.mjs`), the Playwright harness with the repo's login helpers
   (`e2e/scout/_support/scout.ts`; it must compile under the repo's own `tsc`, which is why it isn't shared),
-  and the core smoke specs stay in the repo: they describe the product, not the crew.
+  and the core smoke specs stay in the repo: they describe the product, not the crew. On a PR, Scout takes
+  the core specs, seed and config from `main` (a PR can't weaken what they check) but the harness from the
+  PR when it has one: a PR that changes the header fixes the sign-in helper in the same PR, and a Patch fix
+  to it takes effect.
 - Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level (or on the repo, outside the org,
   where the callers must also pass them by name: see Access), labels `agent` and `scout`, the HQ GitHub App
   installed, and branch protection on `main`.
