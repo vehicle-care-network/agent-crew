@@ -183,6 +183,7 @@ jobs:
               dropped: [.prs[] | select(.status == "dropped") | { pr, reason }],
               skipped: [.prs[] | select(.status == "skipped") | { pr, reason }],
               staging: (if $staging == "" then null else $staging end),
+              notes: (.notes // []),
               summary: $summary
             }' agent-out/rocket.json)
           node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$report"

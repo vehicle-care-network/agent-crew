@@ -16,7 +16,10 @@ node .crew/scripts/rocket/land.mjs status
 It names the PR being landed (`current`), what the release branch was before it (`preSha`), and the
 problem: either **conflicts** (the merge is in progress; the files still carry `<<<<<<<`/`>>>>>>>`
 markers) or **checks** (the merge committed cleanly, but typecheck, lint or the tests fail on top of it;
-the failing output is in the state).
+the failing output is in the state). Its `Note:` lines name checks that already fail on the default
+branch: those are skipped for every PR and are not yours to fix. When a PR changes `package.json` or a
+lockfile, the script reinstalls before its checks, so a missing module is a real problem, not a stale
+`node_modules`.
 
 Read the repo's `CLAUDE.md`, `AGENTS.md` and `README.md` if present, and `.github/agents/LESSONS.md`.
 Report progress to HQ in one short sentence as you go:

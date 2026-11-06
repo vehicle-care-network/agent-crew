@@ -49,7 +49,9 @@ A release is a batch of the crew's finished PRs (Iris approved, Scout passed, ch
 landed together. HQ starts one on its schedule, or when you press Release there, and sends **Rocket**
 (`agent-rocket.yml`) the PRs in landing order. Rocket cuts `release/<version>` from the default branch
 (`version` is `v2026.11.05`, then `.2`, `.3` for later releases the same day), merges each PR into it with a
-merge commit, and runs the repo's `typecheck`, `lint` and `test` after every one. Clean merges need no
+merge commit, and runs the repo's `typecheck`, `lint` and `test` after every one (reinstalling first when
+the PR changed `package.json` or a lockfile). A check that already fails on the default branch is skipped
+for the whole release and named on the release in HQ: it is main's problem, not a PR's. Clean merges need no
 agent and cost nothing. A conflict or a failing check brings in Rocket's agent (brief: `briefs/ROCKET.md`),
 which resolves it on the release branch keeping both PRs' behaviour; a PR it can't make work is left out
 with a reason the person reads on its mission. Rocket pushes the release branch, and the repo's staging

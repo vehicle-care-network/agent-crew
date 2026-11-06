@@ -15,8 +15,13 @@
  *
  * State lives in agent-out/rocket.json:
  *   { version, branch, base, defaultBranch, prs: [{ pr, title, headRef, headSha, status, preSha, sha, reason, attempts }],
+ *     baseline: { failing: { [check]: firstLine } }, notes: [string],
  *     problem: null | { kind: 'conflict'|'checks', pr, files?, log? } }
  * PR status: pending | current | landed | dropped | skipped.
+ *
+ * Two things the checks need to be fair to a PR: its dependencies on disk (a PR that adds a package is
+ * reinstalled before its checks, else typecheck fails on the import), and a clean baseline (a check that
+ * already fails on the default branch is skipped for every PR, named in `notes`, and never blamed on one).
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -59,22 +64,65 @@ function crewCommands() {
   }
 }
 
-/** The repo's typecheck, lint and tests, in that order; stops at the first failure. */
-function runChecks() {
+const CHECKS = ['typecheck', 'lint', 'test'];
+// The files whose change means the packages on disk are stale.
+const DEP_FILES = /^(package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/;
+
+/** Runs one of the repo's commands; `log` holds the tail of its output when it fails. */
+function run(name, cmd) {
+  console.log(`[Rocket] ${name}: ${cmd}`);
+  const r = spawnSync('bash', ['-c', cmd], { encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
+  if (r.status === 0) return { ok: true, log: '' };
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  const why = r.error?.code === 'ETIMEDOUT' ? `timed out after ${CHECK_TIMEOUT_MS / 60000} minutes` : `exited ${r.status}`;
+  const tail = out.split('\n').filter(Boolean).slice(-60).join('\n');
+  return { ok: false, log: `${name} (${cmd}) ${why}:\n${tail}` };
+}
+
+/**
+ * The checks as they stand on the release branch before any PR. One that already fails there is the
+ * default branch's problem, not a PR's: it is skipped for the whole landing and named in the notes.
+ */
+function baseline(state) {
   const commands = crewCommands();
-  for (const name of ['typecheck', 'lint', 'test']) {
+  state.baseline = { failing: {} };
+  for (const name of CHECKS) {
     const cmd = commands[name];
     if (!cmd || cmd === 'true') continue;
-    console.log(`[Rocket] ${name}: ${cmd}`);
-    const r = spawnSync('bash', ['-c', cmd], { encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
-    const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
-    if (r.status !== 0) {
-      const why = r.error?.code === 'ETIMEDOUT' ? `timed out after ${CHECK_TIMEOUT_MS / 60000} minutes` : `exited ${r.status}`;
-      const tail = out.split('\n').filter(Boolean).slice(-60).join('\n');
-      return { ok: false, log: `${name} (${cmd}) ${why}:\n${tail}` };
+    const r = run(name, cmd);
+    if (r.ok) continue;
+    const first = r.log.split('\n').slice(1).find((l) => l.trim()) ?? r.log.split('\n')[0];
+    state.baseline.failing[name] = first.trim().slice(0, 200);
+    const note = `${name} already fails on ${state.defaultBranch} (${first.trim().slice(0, 120)}), so it was skipped for every PR in this release and nothing is held against them for it. Fix it on ${state.defaultBranch}.`;
+    state.notes.push(note);
+    console.log(`[Rocket] ${note}`);
+  }
+}
+
+/** The repo's typecheck, lint and tests, in that order, minus those failing on the baseline; stops at the first failure. */
+function runChecks(state) {
+  const commands = crewCommands();
+  const failing = state.baseline?.failing ?? {};
+  for (const name of CHECKS) {
+    const cmd = commands[name];
+    if (!cmd || cmd === 'true') continue;
+    if (failing[name]) {
+      console.log(`[Rocket] ${name}: skipped, it already fails on ${state.defaultBranch}`);
+      continue;
     }
+    const r = run(name, cmd);
+    if (!r.ok) return r;
   }
   return { ok: true, log: '' };
+}
+
+/** Reinstalls when the landing changed the dependency files since `since`, so a PR's new packages are on disk before its checks. */
+function syncDeps(since) {
+  const changed = git('diff', '--name-only', since, 'HEAD').split('\n').filter((f) => DEP_FILES.test(f));
+  if (!changed.length) return { ok: true, log: '' };
+  const cmd = crewCommands().install || 'npm ci';
+  console.log(`[Rocket] ${changed.join(', ')} changed since ${since.slice(0, 7)}; reinstalling`);
+  return run('install', cmd);
 }
 
 /** What a PR looks like on GitHub (or in ROCKET_PRS_JSON for tests). */
@@ -145,9 +193,10 @@ function loop(state, unattended = false) {
   return 'done';
 }
 
-/** Runs the checks for the current PR; lands it or records the problem. */
+/** Installs what the PR added, runs the checks; lands it or records the problem. */
 function check(state, p, unattended = false) {
-  const r = runChecks();
+  const synced = syncDeps(p.preSha);
+  const r = synced.ok ? runChecks(state) : synced;
   if (r.ok) {
     p.status = 'landed';
     p.sha = git('rev-parse', 'HEAD');
@@ -203,7 +252,7 @@ if (command === 'auto') {
   const base = defaultBranch();
   git('fetch', '-q', 'origin', base);
   git('checkout', '-q', '-B', branch, `origin/${base}`);
-  const state = { version, branch, base: git('rev-parse', 'HEAD'), defaultBranch: base, prs: [], problem: null };
+  const state = { version, branch, base: git('rev-parse', 'HEAD'), defaultBranch: base, prs: [], baseline: { failing: {} }, notes: [], problem: null };
   for (const n of numbers) {
     const number = Number(n);
     const d = describe(number);
@@ -216,6 +265,8 @@ if (command === 'auto') {
   }
   save(state);
   console.log(`[Rocket] ${branch} cut from ${base} at ${state.base.slice(0, 7)}; landing ${state.prs.filter((p) => p.status === 'pending').length} PR(s)`);
+  baseline(state);
+  save(state);
   const result = loop(state);
   output('status', result);
   report(state, result);
@@ -225,6 +276,7 @@ if (command === 'auto') {
   for (const p of state.prs) console.log(`  #${p.pr} ${p.status.padEnd(7)} ${p.title}${p.sha ? ` → ${p.sha.slice(0, 7)}` : ''}${p.reason ? ` (${p.reason})` : ''}${p.attempts ? ` attempts ${p.attempts}` : ''}`);
   const p = current(state);
   if (p) console.log(`\nCurrent: #${p.pr} (${p.headRef} at ${p.headSha.slice(0, 7)}); the release branch before it was ${p.preSha.slice(0, 7)}`);
+  for (const note of state.notes ?? []) console.log(`Note: ${note}`);
   console.log(`Problem: ${problemText(state.problem)}`);
 } else if (command === 'continue') {
   const state = load();
@@ -281,6 +333,7 @@ if (command === 'auto') {
   const dropped = state.prs.filter((x) => x.status === 'dropped');
   const skipped = state.prs.filter((x) => x.status === 'skipped');
   console.log(`[Rocket] ${state.version}: landed ${landed.map((x) => `#${x.pr}`).join(', ') || 'nothing'}; dropped ${dropped.map((x) => `#${x.pr}`).join(', ') || 'nothing'}; skipped ${skipped.map((x) => `#${x.pr}`).join(', ') || 'nothing'}`);
+  for (const note of state.notes ?? []) console.log(`[Rocket] Note: ${note}`);
   output('status', 'done');
   output('sha', git('rev-parse', 'HEAD'));
   output('landed', String(landed.length));
