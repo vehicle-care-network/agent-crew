@@ -3,12 +3,19 @@
  * `upload-evidence.mjs` (Agent HQ), so both describe a run the same way.
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { loadSteps, stepsFor } from './steps.mjs';
 
-/** Loads every test in run order, or null when Playwright wrote no results. */
+/**
+ * Loads every test in run order, or null when Playwright wrote no results. Each row also carries its
+ * `steps` (what the flow did and checked, from `steps.json`; `[]` for runs without the reporter).
+ */
 export function loadTests(out) {
   const resultsPath = `${out}/results.json`;
   if (!existsSync(resultsPath)) return null;
-  return JSON.parse(readFileSync(resultsPath, 'utf8')).suites.flatMap((s) => collectTests(s));
+  const index = loadSteps(out);
+  return JSON.parse(readFileSync(resultsPath, 'utf8'))
+    .suites.flatMap((s) => collectTests(s))
+    .map((row) => ({ ...row, steps: stepsFor(row, index) }));
 }
 
 /** Reads an attachment's bytes whether Playwright wrote it to disk or inlined it as base64. */

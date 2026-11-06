@@ -8,11 +8,14 @@ import path from 'node:path';
  * emulators on a `demo-` project, so nothing here can reach staging or production.
  *
  * Every test is recorded: video and a final screenshot always, plus the step screenshots the specs
- * attach through `evidence()`. `scripts/scout/report.mjs` reads `results.json` to build the PR comment,
- * so pass/fail in that comment comes from Playwright, not from the agent's own account of the run.
+ * attach through `evidence()`, and every action and check as a step (`scout/steps-reporter.cjs`).
+ * `scripts/scout/report.mjs` reads `results.json` to build the PR comment, so pass/fail in that comment
+ * comes from Playwright, not from the agent's own account of the run.
  */
 const root = process.cwd();
 const out = path.resolve(root, process.env.SCOUT_OUT || 'scout-out');
+/** Where the crew is laid out (action.yml puts it in `.crew/`); the steps reporter lives there. */
+const crew = path.resolve(root, process.env.CREW_DIR || '.crew');
 
 export default defineConfig({
   testDir: path.resolve(root, 'e2e/scout'),
@@ -22,7 +25,9 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   outputDir: `${out}/results`,
-  reporter: [['list'], ['json', { outputFile: `${out}/results.json` }], ['html', { outputFolder: `${out}/html`, open: 'never' }]],
+  // The steps reporter writes what each flow did and checked (`steps.json`), which HQ's evidence shows
+  // beside the screenshots and which stands in for repro steps when Scout wrote none.
+  reporter: [['list'], ['json', { outputFile: `${out}/results.json` }], ['html', { outputFolder: `${out}/html`, open: 'never' }], [path.join(crew, 'scout/steps-reporter.cjs'), { outputFile: `${out}/steps.json` }]],
   use: {
     baseURL: process.env.SCOUT_BASE_URL || 'http://localhost:3000',
     video: 'on',

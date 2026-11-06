@@ -25,7 +25,7 @@ on:
         required: false
     inputs:
       params:
-        description: 'JSON from Agent HQ: { mode: pr|regression|smoke, pr_number, focus, mission_id, scenario_id, sha }. Wins over the inputs below. regression with sha + mission_id: a release branch, reporting to that mission.'
+        description: 'JSON from Agent HQ: { mode: pr|regression|smoke, pr_number, focus, mission_id, scenario_id, sha, only }. Wins over the inputs below. regression with sha + mission_id: a release branch, reporting to that mission. only: flow titles (one per line) to re-run instead of the whole suite; HQ folds the results into the previous run.'
         required: false
         type: string
         default: ''
@@ -85,6 +85,10 @@ jobs:
           # Focus: HQ's, the manual input, or the text after `/scout` on the comment's first line.
           focus=$(jq -r '.focus // empty' <<<"$PARAMS")
           [ -n "$focus" ] || focus="${IN_FOCUS:-$(printf '%s' "$COMMENT" | head -1 | sed -E 's#^/scout[[:space:]]*##')}"
+          # Only: flow titles HQ wants run again (one per line), e.g. one that timed out. Scout re-runs
+          # just those; HQ keeps the rest of the verdict from the previous run.
+          only=$(jq -r '.only // empty' <<<"$PARAMS" | head -10)
+          { echo "SCOUT_ONLY<<SCOUT_EOF"; printf '%s\n' "$only"; echo "SCOUT_EOF"; } >> "$GITHUB_ENV"
           if [ "$mode" = smoke ]; then
             # The commit HQ names (a production deploy's), else the default branch's head.
             number=0; sha=$(jq -r '.sha // empty' <<<"$PARAMS" | tr -cd 'a-f0-9')
@@ -112,7 +116,7 @@ jobs:
             sha=$(jq -r .head.sha pr.json)
           fi
           { echo "number=$number"; echo "sha=$sha"; echo "focus<<SCOUT_EOF"; printf '%s\n' "$focus"; echo "SCOUT_EOF"; } >> "$GITHUB_OUTPUT"
-          echo "Mode $mode, PR #$number at ${sha:0:7}, focus: ${focus:-(none)}"
+          echo "Mode $mode, PR #$number at ${sha:0:7}, focus: ${focus:-(none)}${only:+, only: $(printf '%s' "$only" | tr '\n' ';')}"
 
       - uses: actions/checkout@v7
         with:
@@ -167,7 +171,13 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           FOCUS: ${{ steps.pr.outputs.focus }}
         run: |
-          if [ "$SCOUT_MODE" = regression ]; then
+          if [ -n "$SCOUT_ONLY" ]; then
+            # A re-run of named flows: those specs and nothing else, whatever the mode. The grep that
+            # selects them goes to the agent and to the run for the record.
+            case "$SCOUT_MODE" in regression) tier=regression ;; smoke) tier=smoke ;; *) tier=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files?per_page=100" --paginate --jq '.[].filename' | node .crew/scripts/agents/impact.mjs - | jq -r .tier) ;; esac
+            agent=true; turns=40; budget="only the flows named under FLOWS TO RE-RUN"
+            echo "SCOUT_ONLY_GREP=$(node -e 'import("./.crew/scripts/scout/steps.mjs").then(m=>process.stdout.write(m.onlyGrep(m.parseOnly(process.env.SCOUT_ONLY))))')" >> "$GITHUB_ENV"
+          elif [ "$SCOUT_MODE" = regression ]; then
             tier=regression; agent=true; turns=150; budget="every flow in .github/scout/core-flows.md"
           elif [ "$SCOUT_MODE" = smoke ]; then
             tier=smoke; agent=true; turns=60; budget="the smoke-test scenario in SCOUT_FOCUS, and nothing else"
@@ -319,6 +329,8 @@ jobs:
             IMPACT: ${{ steps.scope.outputs.tier }}
             FLOW BUDGET: ${{ steps.scope.outputs.budget }}
             SPECS FROM THE PREVIOUS RUN: ${{ steps.reuse.outputs.reused == 'true' && 'yes, under e2e/scout' || 'none' }}
+            FLOWS TO RE-RUN: ${{ env.SCOUT_ONLY || '(none: a full run)' }}
+            PLAYWRIGHT GREP FOR THEM: ${{ env.SCOUT_ONLY_GREP || '(none)' }}
           claude_args: |
             --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_SCOUT || 'claude-sonnet-5-5' }}
             --max-turns ${{ steps.scope.outputs.turns }}
@@ -334,12 +346,19 @@ jobs:
         run: node .crew/scripts/agents/usage.mjs "${{ steps.scout.outputs.execution_file }}" scout "${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'smoke' && 'smoke' || 'qa' }}" "${{ env.MISSION_ID }}" "${{ steps.pr.outputs.number }}"
 
       # The comment's pass/fail comes from this run, not from the agent's own runs: every spec, core and
-      # PR-specific, is executed once more against the final state of the tests.
+      # PR-specific, is executed once more against the final state of the tests. A re-run of named flows
+      # runs those alone; HQ folds the results into the previous run's.
       - name: Run every Scout spec for the record
         if: always()
         env:
           SCOUT_BASE_URL: ${{ steps.crew.outputs.scout_base_url }}
-        run: npx playwright test -c .crew/playwright.scout.config.ts || true
+        run: |
+          if [ -n "$SCOUT_ONLY_GREP" ]; then
+            echo "Re-running only: $SCOUT_ONLY_GREP"
+            npx playwright test -c .crew/playwright.scout.config.ts --grep "$SCOUT_ONLY_GREP" || true
+          else
+            npx playwright test -c .crew/playwright.scout.config.ts || true
+          fi
 
       - name: Keep the specs for the next run
         if: always()

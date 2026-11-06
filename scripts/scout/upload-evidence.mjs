@@ -6,11 +6,13 @@
  * HQ secret is stored here. HQ answers with one presigned upload URL per file, scoped to this run.
  *
  * Env: AGENT_HQ_URL, GITHUB_REPOSITORY, PR_NUMBER, HEAD_SHA, RUN_URL, SCOUT_AGENT_OUTCOME, SCOUT_OUT,
- * and the runner's ACTIONS_ID_TOKEN_REQUEST_URL / ACTIONS_ID_TOKEN_REQUEST_TOKEN.
+ * SCOUT_ONLY (flow titles re-run on HQ's request, one per line), and the runner's
+ * ACTIONS_ID_TOKEN_REQUEST_URL / ACTIONS_ID_TOKEN_REQUEST_TOKEN.
  * On success prints the HQ link and writes it to $GITHUB_OUTPUT as `url`.
  */
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { attachmentBytes, isCore, loadTests } from './results.mjs';
+import { parseOnly } from './steps.mjs';
 
 const out = process.env.SCOUT_OUT || 'scout-out';
 const hq = (process.env.AGENT_HQ_URL || '').replace(/\/$/, '');
@@ -84,13 +86,33 @@ const cleanBug = (b) => ({
 const sameFlow = (bug, title) => !!bug.flow && (bug.flow === title || title.endsWith(bug.flow) || bug.flow.endsWith(title));
 
 /**
- * How to reproduce a failed flow: Scout's own steps when it wrote them; otherwise built from the flow's
- * step screenshots (each one a step that worked) and the exact error, so a failure is never left without.
+ * How to reproduce a failed flow: Scout's own steps when it wrote them; otherwise built from what the
+ * flow actually did (the recorded actions, in plain words), the check it was on when it failed, and the
+ * exact error, so a failure is never left without. Runs without recorded steps fall back to the step
+ * screenshots (each one a step that worked).
  */
 function reproFor(t) {
   if (t.status === 'passed' || t.status === 'skipped') return null;
   const bug = bugs.find((b) => sameFlow(b, t.title));
   if (bug) return { source: 'scout', ...cleanBug(bug) };
+  const steps = t.steps ?? [];
+  const failedAt = steps.findIndex((s) => !s.ok);
+  const upTo = failedAt >= 0 ? steps.slice(0, failedAt) : steps;
+  const failing = failedAt >= 0 ? steps[failedAt] : null;
+  const actions = upTo.filter((s) => s.kind === 'action' || s.kind === 'step').map((s) => s.text);
+  const timedOut = t.status === 'timedOut';
+  if (actions.length || failing) {
+    const expected = failing?.kind === 'check' ? failing.text.replace(/^Check that /, '') : '';
+    const where = failing ? (failing.kind === 'check' ? `Then look for this: ${failing.text.replace(/^Check that /, '')}` : `Then: ${failing.text}`) : 'Then watch the end of the video.';
+    return {
+      source: 'derived',
+      title: '',
+      severity: 'major',
+      steps: [...actions.slice(0, 14), where].slice(0, 15),
+      expected,
+      actual: [timedOut ? `Time ran out (${t.seconds}s) ${failing ? `at: ${failing.text}` : 'before the flow finished'}.` : '', t.error || (failing?.error ?? '')].filter(Boolean).join(' ').slice(0, 500) || 'The flow failed without an assertion message; see the video and the run log.',
+    };
+  }
   return {
     source: 'derived',
     title: '',
@@ -100,6 +122,23 @@ function reproFor(t) {
     actual: t.error || 'The flow failed without an assertion message; see the video and the run log.',
   };
 }
+
+/** The recorded steps as HQ stores them: what happened, in order, trimmed to what fits in the run document. */
+const compactSteps = (t) =>
+  (t.steps ?? []).slice(0, 40).map((s) => ({
+    kind: s.kind,
+    text: s.text,
+    ok: s.ok,
+    ms: s.ms,
+    ...(s.depth ? { depth: s.depth } : {}),
+    ...(s.error ? { error: String(s.error).slice(0, 400) } : {}),
+    ...(s.unfinished ? { unfinished: true } : {}),
+    ...(s.raw && s.raw !== s.text ? { raw: String(s.raw).slice(0, 160) } : {}),
+  }));
+
+// The flows HQ asked Scout to re-run (SCOUT_ONLY, one title per line): HQ folds these results into the
+// previous run's, so the PR's verdict still covers every flow.
+const only = parseOnly(process.env.SCOUT_ONLY);
 
 // One folder per test; step screenshots in order, falling back to Playwright's final screenshot. A failed
 // flow also gets Playwright's screenshot from the moment it failed, as its last step.
@@ -131,6 +170,7 @@ const manifestTests = tests.map((t, i) => {
     error: t.error,
     problems: t.problems,
     repro: reproFor(t),
+    steps: compactSteps(t),
     shots,
     video,
   };
@@ -173,6 +213,7 @@ const manifest = {
   // HQ decides the PR's QA result from these, the same way report.mjs words the comment.
   buildErrors,
   tier: process.env.SCOUT_TIER || '',
+  ...(only.length ? { only } : {}),
   tests: manifestTests.map((t) => ({
     ...t,
     shots: t.shots.map((s) => ({ name: s.name, pathname: byName.get(s.file).pathname })),
@@ -183,6 +224,6 @@ const manRes = await fetch(`${hq}/api/evidence/manifest`, { method: 'POST', head
 if (!manRes.ok) fail(`HQ refused the manifest (${manRes.status}): ${(await manRes.text()).slice(0, 300)}`);
 const { mission } = await manRes.json();
 
-const link = regression ? `${hq}/#health` : `${hq}/#evidence=${encodeURIComponent(mission)}`;
-console.log(`[ScoutEvidence] Sent ${files.length} files for ${tests.length} flows: ${link}`);
+const link = regression && !smokeMission ? `${hq}/#health` : `${hq}/#evidence=${encodeURIComponent(mission)}`;
+console.log(`[ScoutEvidence] Sent ${files.length} files for ${tests.length} flows${only.length ? ` (re-ran ${only.length}; HQ keeps the rest from the previous run)` : ''}: ${link}`);
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `url=${link}\n`);

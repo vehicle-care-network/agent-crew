@@ -13,6 +13,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { isCore, loadTests } from './results.mjs';
+import { parseOnly } from './steps.mjs';
 
 const MARKER = '<!-- scout-qa -->';
 const out = process.env.SCOUT_OUT || 'scout-out';
@@ -88,8 +89,12 @@ function baseBody() {
     ? readFileSync(summaryPath, 'utf8').trim()
     : "_Scout didn't write notes for this run. Results above come straight from Playwright._";
 
+  // A re-run of named flows (HQ's request): the table holds those alone; the full verdict is in HQ.
+  const only = parseOnly(process.env.SCOUT_ONLY);
+  const rerunNote = only.length ? `_Re-ran ${only.length === 1 ? 'one flow' : `${only.length} flows`} on request from HQ, which keeps the rest of the verdict from the previous run._\n` : '';
+
   return [
-    smokeOnlyByDesign || agentFailed || prTests.length === 0 ? headline : `${headline} · ${passed} passed`,
+    rerunNote + (smokeOnlyByDesign || agentFailed || prTests.length === 0 ? headline : `${headline} · ${passed} passed`),
     '',
     '| | Flow | Scope | Shots | Time | Notes |',
     '|---|---|---|---|---|---|',

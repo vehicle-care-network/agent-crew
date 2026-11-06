@@ -87,6 +87,24 @@ eight things in fifteen. In particular:
    - **Worth a look**: console or server errors from the run that look related to this PR. Ignore
      React hydration warnings and anything caused by missing third-party keys.
 
+## Re-running named flows (`FLOWS TO RE-RUN`)
+
+When your prompt lists flows under `FLOWS TO RE-RUN`, someone in HQ asked for those specific flows to run
+again (one timed out, one looked flaky, one was fixed by hand) and nothing else. Whatever the mode:
+
+1. Find each flow's spec among the reused specs (`PLAYWRIGHT GREP FOR THEM` is the `--grep` that selects
+   them: `npx playwright test -c .crew/playwright.scout.config.ts --grep '<that pattern>'`). If a spec is
+   missing (the artifact expired), write it again as in the steps above, for that flow only.
+2. Run those flows first, as they are. Then work out why each failed last time: a test that waits for
+   something the app never shows, a seed the flow needs that wasn't there, or the app itself. Fix the test
+   or the seed when they are the problem (at most two attempts); if the app is wrong, leave the test failing
+   and write the bug in `scout-out/bugs.json` with steps a person can follow cold. If it passes now, say
+   so in `summary.md` and say what you think made it fail before (slow page, timing, data).
+3. Do not touch the other specs and do not add new flows. The workflow runs only the named flows for the
+   record, and HQ keeps the rest of the verdict from the previous run.
+4. `scout-out/summary.md` is short: one line per re-run flow, what happened, and why it differs from last
+   time if it does.
+
 ## Rules
 
 - Do not modify application code. Write only under `e2e/scout/` and `scout-out/`.

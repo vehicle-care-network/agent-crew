@@ -31,6 +31,12 @@ or, given a commit and a mission, a release branch Rocket built, reporting to th
 after each production deploy, or by hand) on main or on the deployed commit, reusing the spec it wrote
 last time; the result goes to the HQ mission that started it, never to a PR.
 
+In any mode, `only` (flow titles, one per line, from HQ's "Re-run this flow") makes Scout re-run those
+flows alone from the specs it kept, work out why each failed last time, and report just those; HQ folds
+the results into the previous run so the verdict still covers every flow. Every run also records what
+each flow did and checked, step by step (`scout/steps-reporter.cjs` → `scout-out/steps.json`): HQ shows
+it beside the screenshots, and a failed flow Scout wrote no repro for gets its steps from there.
+
 ## Designs: Nova
 
 Every mission that starts with a mock starts with **Nova** (`agent-nova.yml`): HQ sends her the task and
