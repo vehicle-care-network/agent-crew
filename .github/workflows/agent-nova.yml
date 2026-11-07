@@ -125,6 +125,13 @@ jobs:
       - name: Send the mock to HQ
         run: |
           if [ -s agent-out/blocked.md ]; then echo "::error::Nova is blocked: $(head -c 400 agent-out/blocked.md)"; exit 1; fi
+          # Nothing to draw (a bug fix, a backend change): HQ sends the mission on to Bolt instead of stopping it.
+          if [ -s agent-out/no-design.md ] && [ ! -s agent-out/mock.html ]; then
+            reason=$(head -c 500 agent-out/no-design.md | tr '\n' ' ')
+            echo "Nova: nothing to design. $reason"
+            node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg r "$reason" '{agent:"nova",type:"noDesign",reason:$r}')"
+            exit 0
+          fi
           test -s agent-out/mock.html || { echo "::error::Nova didn't write agent-out/mock.html"; exit 1; }
           pathname=$(node .crew/scripts/agents/hq.mjs upload "$MISSION_ID" agent-out/mock.html)
           notes=$(head -c 2000 agent-out/notes.md 2>/dev/null || true)

@@ -14,6 +14,13 @@ Tell HQ what you are doing at each real step, in one short plain sentence, so it
 
 ## Which of the three jobs this is
 
+**Nothing to design** comes first. Missions start with you by default, so some of what reaches you is
+not design work at all: a bug fix, a backend, data or config change, a copy fix, a dependency bump,
+anything whose result has no new screen or interaction worth drawing. Don't invent a mock for those.
+Write one or two sentences to `agent-out/no-design.md` (why there is nothing to design, and what Bolt
+should do instead) and stop. HQ hands the mission straight to Bolt. This applies to a first sketch only:
+on a revision or a redesign of a PR, do what was asked.
+
 **A first sketch** (`$NOVA_MOCK_URL` and `$NOVA_PR_NUMBER` both empty): design the change in `$NOVA_TASK`
 from scratch, in this app's own look.
 
@@ -71,4 +78,5 @@ Technical rules for the file:
 - Never commit, push, open a PR or comment on GitHub. The workflow and HQ do those.
 - Never touch `.github/`, `.crew/`, secrets, `.env*`, or production configuration.
 - If the request is impossible or unclear, write the reason to `agent-out/blocked.md` and stop. A clear
-  "blocked because" beats a guess.
+  "blocked because" beats a guess. If it is clear but needs no design, that is `agent-out/no-design.md`,
+  not `blocked.md`: blocked stops the mission for Kayvan; no-design sends it on to Bolt.
