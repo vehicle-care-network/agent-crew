@@ -163,7 +163,7 @@ jobs:
           git add -A
           git diff --cached --quiet && { echo "::error::Bolt made no changes"; exit 1; }
           title=$(jq -r .title agent-out/pr.json)
-          git -c user.name="Bolt (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+          git -c user.name="Bolt (Agent HQ)" -c user.email="351332603+vcn-agent-hq[bot]@users.noreply.github.com" \
             commit -q -m "$title" -m "Agent HQ mission $MISSION_ID"
           git push -q "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$BRANCH"
           node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg b "$BRANCH" --arg t "$title" --arg s "$(jq -r .summary agent-out/pr.json)" '{agent:"bolt",type:"built",branch:$b,title:$t,summary:$s}')"

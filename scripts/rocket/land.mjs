@@ -27,7 +27,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const STATE = 'agent-out/rocket.json';
-const IDENTITY = ['-c', 'user.name=Rocket (Agent HQ)', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com'];
+const IDENTITY = ['-c', 'user.name=Rocket (Agent HQ)', '-c', 'user.email=351332603+vcn-agent-hq[bot]@users.noreply.github.com'];
 const CHECK_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
 const repo = process.env.GITHUB_REPOSITORY || '';

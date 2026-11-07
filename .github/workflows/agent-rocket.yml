@@ -150,7 +150,7 @@ jobs:
           if [ -s agent-out/lesson.md ]; then
             printf '\n%s\n' "$(cat agent-out/lesson.md)" >> .github/agents/LESSONS.md
             git add .github/agents/LESSONS.md
-            git -c user.name="Rocket (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            git -c user.name="Rocket (Agent HQ)" -c user.email="351332603+vcn-agent-hq[bot]@users.noreply.github.com" \
               commit -q -m "Add Rocket's lesson from $ROCKET_VERSION" -m "Agent HQ mission $MISSION_ID"
           fi
           rm -rf agent-out/lesson.md

@@ -71,7 +71,7 @@ jobs:
         run: |
           mkdir -p agent-out
           git fetch -q origin "$BASE"
-          git -c user.name="Patch (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+          git -c user.name="Patch (Agent HQ)" -c user.email="351332603+vcn-agent-hq[bot]@users.noreply.github.com" \
             merge --no-ff --no-commit "origin/$BASE" || true
           git diff --name-only --diff-filter=U > agent-out/conflicts.txt
           echo "Conflicted files:"; cat agent-out/conflicts.txt
@@ -174,7 +174,7 @@ jobs:
             request) msg='Make the requested change' ;;
             *) msg='Address review feedback' ;;
           esac
-          git -c user.name="Patch (Agent HQ)" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+          git -c user.name="Patch (Agent HQ)" -c user.email="351332603+vcn-agent-hq[bot]@users.noreply.github.com" \
             commit -q -m "$msg" -m "Agent HQ mission $MISSION_ID"
           git push -q "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$BRANCH"
           node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg s "$(cat agent-out/summary.md 2>/dev/null | head -c 1500)" '{agent:"patch",type:"fixed",summary:$s}')"
