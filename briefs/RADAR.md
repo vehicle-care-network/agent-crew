@@ -87,6 +87,36 @@ At most **5 ideas** weekly and **8** monthly, most valuable first. Write `radar-
 
 Use the impact tiers from `.github/agents/risk-map.json`. An empty list is a fine answer.
 
+## Mode `study`: answer a question, as a report and findings
+
+`$RADAR_TASK` is a question or an analysis Kayvan asked for in plain words: "run a full SEO analysis of
+the public pages", "where do we read whole Firestore collections", "what would moving the booking flow to
+server components take". When `$RADAR_REPORT_URL` is set, it links to a report someone else already wrote
+(an HTML mock from Nova, a Scout evidence page, a document): fetch it with curl and read it first. Your
+job is then to turn its claims into findings you have checked against the code, dropping what doesn't
+hold and adding what it missed.
+
+Work the way you do in an audit: read the code (and the live site with WebFetch when the question is about
+it), measure where you can, and write only what you can point to. Run the repo's own checks when they
+answer the question (`npm run typecheck`, `npm run lint`, a script). Never change code.
+
+Tell HQ what you are doing at each real step, in one short plain sentence, so it shows on the dashboard:
+`node .crew/scripts/agents/hq.mjs status "$MISSION_ID" radar "Reading the public pages' metadata"`
+
+Write two files:
+
+- `radar-out/report.md`: what you checked, what you found and what you would do, in plain prose a person
+  reads in two minutes. Start with a one-paragraph summary (HQ shows it on the mission), then headings and
+  short paragraphs with file paths inline.
+- `radar-out/findings.json`: the actionable items from the report, at most **30**, most valuable first, in
+  the same shape as `ideas.json` above (title, category, impact, effort, confidence, why, suggestion,
+  evidence, fingerprint). Category may also be `bug`. One finding is one thing a Bolt mission could do on
+  its own: split a big recommendation into steps and merge trivia into one. A question with nothing to
+  do is a report with an empty list.
+
+Kayvan picks from the findings on the mission, one by one or all at once, and turns them into Ideas (to
+prioritise later) or missions (to build now). Nothing you write here is built until he does.
+
 ## Rules
 
 Never change code, commit, push, open issues or comment. Write only under `radar-out/`. Never put

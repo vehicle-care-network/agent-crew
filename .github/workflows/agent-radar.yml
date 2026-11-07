@@ -5,6 +5,8 @@ name: Agent · Radar
 #   - estimates the impact of new HQ missions before they're built (triage);
 #   - audits the codebase weekly (major dependency upgrades, serious advisories, cleanup) and monthly
 #     (plus security, performance and SEO), and sends at most a handful of ideas to Agent HQ's inbox;
+#   - studies a question you ask it in HQ ("run a full SEO analysis of the public pages") and reports back
+#     with a written report and a list of findings you turn into Ideas or missions;
 #   - checks daily whether main is due for Scout's regression run, and starts it when it is.
 # It proposes; it never changes code.
 # Reusable: a repo's `.github/workflows/agent-radar.yml` holds the triggers and calls this.
@@ -22,7 +24,7 @@ on:
         required: false
     inputs:
       params:
-        description: 'JSON from Agent HQ: { mode: triage|audit, mission_id, task, scope }. Wins over the inputs below.'
+        description: 'JSON from Agent HQ: { mode: triage|audit|study, mission_id, task, scope, report_url }. Wins over the inputs below.'
         required: false
         type: string
         default: ''
@@ -41,7 +43,7 @@ on:
         type: string
         default: ''
       mode:
-        description: triage or audit (manual input)
+        description: triage, audit or study (manual input)
         required: false
         type: string
         default: ''
@@ -133,6 +135,88 @@ jobs:
         run: |
           test -s radar-out/impact.json || { echo "::error::Radar didn't write radar-out/impact.json"; exit 1; }
           node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -c '{agent:"radar",type:"impact",tier,reasons}' radar-out/impact.json)"
+
+  study:
+    if: inputs.event == 'workflow_dispatch' && (fromJSON(inputs.params || '{}').mode || inputs.mode) == 'study'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: agent-radar-study-${{ fromJSON(inputs.params || '{}').mission_id }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MISSION_ID: ${{ fromJSON(inputs.params || '{}').mission_id }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up the crew
+        id: crew
+        uses: vehicle-care-network/agent-crew@v1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.crew.outputs.node }}
+          cache: npm
+      # Radar may run the repo's own checks (typecheck, lint, a script) when they answer the question.
+      - run: bash -c "$(jq -r .commands.install .github/agents/crew.json)"
+
+      # An empty status is a heartbeat: it keeps HQ from flagging a long study as stalled.
+      - name: Check in with HQ
+        run: |
+          [ -n "$MISSION_ID" ] || { echo "::error::No mission_id in the request"; exit 1; }
+          mkdir -p radar-out
+          node .crew/scripts/agents/hq.mjs status "$MISSION_ID" radar "Reading the question and the code"
+          ( while sleep 600; do node .crew/scripts/agents/hq.mjs status "$MISSION_ID" radar "" || true; done ) &
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model radar)" >> "$GITHUB_OUTPUT"
+
+      - name: Radar studies
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          RADAR_MODE: study
+          RADAR_TASK: ${{ fromJSON(inputs.params || '{}').task }}
+          RADAR_REPORT_URL: ${{ fromJSON(inputs.params || '{}').report_url }}
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          prompt: |
+            Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: study.
+            MISSION_ID: ${{ env.MISSION_ID }}
+            The question is in the environment variable RADAR_TASK; a report to read first, when there is one, is linked in RADAR_REPORT_URL.
+          claude_args: |
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
+            --max-turns 150
+            --allowedTools Bash,Read,Glob,Grep,Write,WebFetch
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" radar "study" "$MISSION_ID" ""
+      - name: Send the report and findings to HQ
+        run: |
+          test -s radar-out/report.md || { echo "::error::Radar didn't write radar-out/report.md"; exit 1; }
+          test -s radar-out/findings.json || echo '[]' > radar-out/findings.json
+          jq -e 'type == "array"' radar-out/findings.json >/dev/null || { echo "::error::radar-out/findings.json is not a list"; exit 1; }
+          pathname=$(node .crew/scripts/agents/hq.mjs upload "$MISSION_ID" radar-out/report.md)
+          # The summary HQ shows on the mission: the first paragraph that isn't a heading.
+          summary=$(awk 'BEGIN { RS=""; ORS="" } !/^#/ { print; exit }' radar-out/report.md | tr '\n' ' ' | head -c 600)
+          jq -n --arg p "$pathname" --arg s "$summary" --slurpfile f radar-out/findings.json '{agent:"radar",type:"findings",pathname:$p,summary:$s,findings:$f[0]}' > radar-out/report.json
+          echo "Sending $(jq length radar-out/findings.json) findings"
+          node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(cat radar-out/report.json)"
+      - name: Tell HQ it failed
+        if: failure()
+        run: node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg e "The Radar study run failed. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{agent:"radar",type:"failed",error:$e}')" || true
 
   regression-check:
     if: inputs.event == 'schedule' && inputs.schedule == '0 13 * * *'

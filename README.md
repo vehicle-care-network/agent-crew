@@ -2,7 +2,8 @@
 
 The crew Agent HQ (https://agent-hq-cyan.vercel.app) runs in every repo it works on: **Nova** designs
 the mock, **Bolt** builds, **Iris** reviews, **Patch** fixes, **Scout** tests in a browser, **Radar** labels
-impact, triages and audits, **Rocket** lands the finished PRs into a release and ships it. This repo holds
+impact, triages, audits and studies the questions you ask it (a report plus findings HQ turns into Ideas or
+missions), **Rocket** lands the finished PRs into a release and ships it. This repo holds
 the crew once. A repo that uses the crew keeps only its own answers (what the product is, how to lint and
 test it, what Scout can log in as) and seven thin workflows that call the ones here. Change the crew here,
 tag a release, and every repo gets it.
