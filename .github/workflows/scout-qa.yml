@@ -52,7 +52,7 @@ on:
 
 jobs:
   scout:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # ubuntu-latest moved to 26.04 (Nov 2026), which Playwright has no Chromium build for
     timeout-minutes: 50
     permissions:
       contents: read
