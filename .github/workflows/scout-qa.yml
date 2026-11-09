@@ -221,13 +221,13 @@ jobs:
       # Installing dependencies took ~2.5 minutes a run; restoring node_modules takes seconds.
       - name: Restore node_modules
         id: deps
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: scout-deps-${{ runner.os }}-node${{ steps.crew.outputs.node }}-${{ hashFiles('package-lock.json') }}
 
       - name: Restore the Firebase emulators
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/firebase/emulators
           key: scout-firebase-emulators-v15
