@@ -38,17 +38,20 @@ one, build the one the mock marks as recommended or lists first, say so in the P
    the data layer, models in `{{paths.models}}`. Prefer extending what exists over adding parallel
    versions. Write no code the task doesn't need: no speculative options, no abstractions for one
    caller, no unrelated cleanup. Less code is better code.
-2. **Test first where the logic branches.** Add tests under `{{paths.tests}}` for new or changed pure
+2. **Tests are evidence, not obstacles.** Never weaken, skip or delete an existing test or flow to make a
+   run pass. If one is wrong because the task changes that behaviour, correct it and say so in your summary,
+   one line per test: `Test corrected: <path> — <why>`. HQ flags each to Kayvan with that reason.
+3. **Test first where the logic branches.** Add tests under `{{paths.tests}}` for new or changed pure
    functions with branching logic (pricing, scheduling, validation, formatting). Write the failing test,
    then make it pass.
-3. **Build it** the way this repo does. The repo's own rules are below under "This repo".
-4. **Verify before you claim it's done.** Run, and fix until clean:
+4. **Build it** the way this repo does. The repo's own rules are below under "This repo".
+5. **Verify before you claim it's done.** Run, and fix until clean:
    - `{{commands.format}}`
    - `{{commands.lint}}`
    - `{{commands.typecheck}}`: no errors in any file you touched. `next dev` doesn't type-check, but
      Vercel does, and Scout refuses to test a PR that fails it.
    - `{{commands.test}}` for the tests you added or touched
-5. Write `agent-out/pr.json`: `{ "title": "<imperative, under 70 chars>", "summary": "<markdown: what
+6. Write `agent-out/pr.json`: `{ "title": "<imperative, under 70 chars>", "summary": "<markdown: what
    changed and why, how to try it, anything risky>" }`.
 
 ## This repo

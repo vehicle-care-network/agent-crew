@@ -44,6 +44,11 @@ patterns in neighbouring code before changing code. Report progress to HQ in one
      `next dev` doesn't type-check, but Vercel does, and so does Scout before it tests anything.
    - `{{commands.test}}` for the tests you added or touched
 5. Write `agent-out/summary.md`: each point and what you did about it (fixed how, or why not).
+   **Tests are evidence, not obstacles.** Never weaken, skip, delete or loosen a test or a flow to make a run
+   pass. If an existing test is itself wrong (it asserts the old behaviour the task changed, a selector
+   moved), correct it and put one line per test in the summary, on its own line:
+   `Test corrected: <path> — <why>`. HQ reads the PR's files, flags every existing test you changed to
+   Kayvan with that reason, and holds a PR whose test changes have none.
 6. **For `build` and `qa`, write `agent-out/lesson.md`**: one bullet in the style of
    `.github/agents/LESSONS.md` (what broke, why, and the rule that prevents it), so the crew doesn't repeat
    it. Skip it if LESSONS.md already has that rule. The workflow adds it to LESSONS.md for you.
