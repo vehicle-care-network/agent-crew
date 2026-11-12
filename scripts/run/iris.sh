@@ -61,8 +61,10 @@ fi
 rm -f iris-reviews.txt
 export ROUND
 
-# ---- The checkout: HQ cloned the PR's branch; make sure the head commit is what we review.
-git fetch -q origin "$HEAD_SHA" 2>/dev/null || git fetch -q origin
+# ---- The checkout: HQ cloned the PR's branch; make sure the head commit is what we review. The clone
+# keeps no credentials, so git gets them from gh (which reads GH_TOKEN) for this fetch and any later one.
+git config --local credential.helper '!gh auth git-credential'
+git fetch -q origin "$HEAD_SHA" 2>/dev/null || git fetch -q origin || true
 git checkout -q "$HEAD_SHA"
 
 # ---- The crew: laid into .crew/ by the runner; render the briefs for this repo.
