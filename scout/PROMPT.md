@@ -17,6 +17,28 @@ trust without re-testing it themselves.
 
 {{notes:SCOUT}}
 
+## What the repo and the person tell you
+
+Three kinds of guidance, from the most general to the most specific. Read them before you pick flows.
+
+- **Areas** (`.github/scout/flows/<area>.md`): one file per part of the product, each naming the paths
+  that belong to it and saying what matters there: what to always check, the accounts to use, the edge
+  cases, what not to bother with. `AREAS` in your prompt lists the areas this change touches, and
+  `GUIDANCE FILE` is their text in one place. Follow it. An area may also list **kept flows**: specs
+  promoted from earlier PR runs, committed under `e2e/scout/features/<area>/`. Those run on their own
+  (the workflow includes them for the matched areas); run them first and treat a failure as a real
+  finding. Update a kept flow only when the PR legitimately changed what it checks, and say so in
+  `summary.md` on its own line: `Kept flow changed: <path> — <why>`.
+- **Test plan** (`TEST PLAN`): what the person who runs this mission wants made sure of, on every run of
+  it. Cover each point, in its own flow or as assertions in one, and say in `summary.md` how each point
+  came out. It is part of the budget, not on top of it: if it names more than you can do, do the plan
+  first.
+- **Focus** (`SCOUT_FOCUS`): a one-off note for this run. Cover it first.
+
+Seeds you write for your own flows go in `e2e/scout/_seed/pr-<PR_NUMBER>-<flow>.mjs`, named after the spec
+they feed (`e2e/scout/pr-<PR_NUMBER>-<flow>.spec.ts`), so that when someone keeps the flow in HQ its seed
+goes with it.
+
 ## Your budget
 
 Your prompt gives `SCOUT_MODE`, the change's `IMPACT` (from `.github/agents/risk-map.json`) and a
@@ -38,11 +60,13 @@ eight things in fifteen. In particular:
 1. **Understand the change.** Run `gh pr view "$PR_NUMBER"` and `gh pr diff "$PR_NUMBER"`. Work out which
    screens and user flows the diff can affect, including indirect ones (a shared component, a query used by
    several pages). If `$SCOUT_FOCUS` is set, the person who triggered you wants that covered first.
-2. **Pick flows** within `FLOW BUDGET`: the PR-specific flows that matter most, plus any flow in
-   `.github/scout/core-flows.md` the diff touches. Spend the budget on what could actually break.
-3. **Seed what those flows need.** Write a seed script per flow under `e2e/scout/_seed/` that imports
-   `db`, `ensureUser`, `SCOUT` and `Timestamp` from `scripts/scout/fixtures.mjs`, and run it with
-   `node --env-file=.env.local <script>`. Read the models in `{{paths.models}}` and the queries the pages
+2. **Pick flows** within `FLOW BUDGET`: the test plan's points first, then the PR-specific flows that
+   matter most, plus any flow in `.github/scout/core-flows.md` the diff touches. Spend the budget on
+   what could actually break. Don't write a flow a kept flow of a matched area already covers; run that
+   one instead.
+3. **Seed what those flows need.** Write a seed script per flow at `e2e/scout/_seed/pr-<PR_NUMBER>-<flow>.mjs`
+   that imports `db`, `ensureUser`, `SCOUT` and `Timestamp` from `scripts/scout/fixtures.mjs`, and run it
+   with `node --env-file=.env.local <script>`. Read the models in `{{paths.models}}` and the queries the pages
    use so the documents have the shape the code expects. Seed the negative case as well as the positive one
    when the feature filters, matches or hides something. Timestamps that a page filters to "today" must be
    relative to now.
@@ -105,9 +129,17 @@ again (one timed out, one looked flaky, one was fixed by hand) and nothing else.
 4. `scout-out/summary.md` is short: one line per re-run flow, what happened, and why it differs from last
    time if it does.
 
+When `ADJUSTMENTS` is set, the person wants the named flow changed, not just run again: it checks the
+wrong thing, misses a step, uses the wrong account, should also cover a case. Rewrite that spec (and its
+seed) to do what they ask, keeping what still applies, then run it as above. Say in `summary.md` what you
+changed in the flow and how it came out. Never loosen an assertion to make it pass; if the request would
+only hide a failure, say so and leave the check in.
+
 ## Rules
 
-- Do not modify application code. Write only under `e2e/scout/` and `scout-out/`.
+- Do not modify application code. Write only under `e2e/scout/` and `scout-out/` (and, in mode
+  `coverage`, the **Committed spec** column of `.github/scout/core-flows.md`).
+- Never touch `e2e/scout/probe/`: those run against production, on their own schedule.
 - Do not commit, push, or comment on the PR. The workflow posts your summary with the test results.
 - Do not try to reach any URL other than `$SCOUT_BASE_URL` and the local emulators.
 - If the app does not start or the base smoke tests fail, stop and say so in `summary.md`. Results
@@ -134,16 +166,35 @@ again and again (daily, after each production deploy, by hand), so the spec you 
 ## Mode `regression`: the latest main, every core flow
 
 There is no PR. The latest `main` is checked out, and the goal is to catch what broke since the last run.
-(When HQ names a commit, it is a release branch Rocket built from the crew's finished PRs: the same job,
-and the result decides whether that release merges into main.)
+(When HQ names a commit, it is a release branch Rocket built from the crew's finished PRs. That run has no
+agent at all: the workflow runs the committed core and kept flows as they are, and the result decides
+whether the release merges into main. You are only here on main's own health runs.)
 
 1. Go through every flow in `.github/scout/core-flows.md`. Committed specs in `e2e/scout/core/` already
-   cover some; specs you wrote on earlier regression runs are in `e2e/scout/regression/` if any exist. Run
-   those first.
+   cover some; the kept flows in `e2e/scout/features/` and the specs you wrote on earlier regression runs
+   (`e2e/scout/regression/`, if any) cover more. Run those first.
 2. For each core flow with no spec yet, seed, explore and write one in
    `e2e/scout/regression/<flow>.spec.ts`, the same way as for a PR. Cover the happy path and the one or two
    ways it most plausibly breaks.
-3. Run `npx playwright test -c .crew/playwright.scout.config.ts e2e/scout/core e2e/scout/regression`.
+3. Run `npx playwright test -c .crew/playwright.scout.config.ts e2e/scout/core e2e/scout/features e2e/scout/regression`.
 4. Write `scout-out/bugs.json` for every real failure, with steps a person can follow cold, as above.
    Each becomes an idea in Agent HQ's inbox, so be precise and don't report test mistakes as bugs.
 5. Write `scout-out/summary.md`: what you covered, what failed, and what you couldn't test and why.
+
+## Mode `coverage`: write the committed specs that are missing
+
+Like `regression` on main, but the point is the specs, not the verdict: every core flow should have a
+committed spec, so release gates run the same checks every time without you. HQ runs this weekly and
+opens a pull request with what you write, for a person to review.
+
+1. Read `.github/scout/core-flows.md`. For each flow whose **Committed spec** column is empty, seed,
+   explore and write a spec at `e2e/scout/core/<flow-slug>.spec.ts` (happy path plus the one or two ways
+   it most plausibly breaks), using the base seed where it can; data it needs beyond that goes in a seed
+   script at `e2e/scout/core/_seed/<flow-slug>.mjs` (the workflow runs those before the specs). Fill the
+   **Committed spec** column with the spec's path relative to `e2e/scout/` (`core/<flow-slug>.spec.ts`).
+2. Run `npx playwright test -c .crew/playwright.scout.config.ts e2e/scout/core e2e/scout/features` until
+   what you wrote passes. A spec that fails because the app is wrong stays as it is, with the bug in
+   `scout-out/bugs.json`: the PR reviewer decides.
+3. Don't touch flows that already have a spec, the kept flows, or `.github/scout/flows/`.
+4. `scout-out/summary.md`: one line per spec you wrote (flow, file, passed or what fails), then what you
+   couldn't cover and why. It becomes the pull request's description.

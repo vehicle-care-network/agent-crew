@@ -17,8 +17,15 @@ const out = path.resolve(root, process.env.SCOUT_OUT || 'scout-out');
 /** Where the crew is laid out (action.yml puts it in `.crew/`); the steps reporter lives there. */
 const crew = path.resolve(root, process.env.CREW_DIR || '.crew');
 
+/**
+ * Never the production probes (`e2e/scout/probe/`, run against the live site by scout-probe.yml), and on
+ * a PR, not the kept flows of areas the change doesn't touch (`SCOUT_IGNORE`, from scripts/scout/areas.mjs).
+ */
+const ignore = ['**/probe/**', ...(process.env.SCOUT_IGNORE || '').split(',').map((g) => g.trim()).filter(Boolean)];
+
 export default defineConfig({
   testDir: path.resolve(root, 'e2e/scout'),
+  testIgnore: ignore,
   timeout: 90 * 1000,
   expect: { timeout: 15 * 1000 },
   fullyParallel: false,

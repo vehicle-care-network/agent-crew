@@ -24,6 +24,10 @@ export function attachmentBytes(attachment) {
 }
 
 export const isCore = (test) => /(^|\/)core\//.test(test.file);
+/** A flow kept with the product (`e2e/scout/features/<area>/`), promoted from a PR run in Agent HQ. */
+export const isFeature = (test) => /(^|\/)features\//.test(test.file);
+/** Where a flow comes from: the committed core suite, a kept feature flow, or this run's own spec. */
+export const scopeOf = (test) => (isCore(test) ? 'core' : isFeature(test) ? 'feature' : 'pr');
 
 function collectTests(suite, path = []) {
   const here = suite.title && !suite.title.endsWith('.ts') ? [...path, suite.title] : path;
