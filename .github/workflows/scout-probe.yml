@@ -1,0 +1,109 @@
+name: Production probe
+
+# Is the live site up? The repo's own read-only checks (`e2e/scout/probe/*.spec.ts`: plain Playwright,
+# no emulators, no seeding, no agent) run against production on a schedule and report to Agent HQ, which
+# shows each repo as up or down and tells you when it changes. Cheap enough to run every few minutes.
+# Reusable: a repo's `.github/workflows/scout-probe.yml` holds the schedule and calls this one.
+#
+# The repo provides: e2e/scout/probe/*.spec.ts, and the site to probe in .github/agents/crew.json
+# (`"probe": { "url": "https://..." }`) or as the `base_url` input. Specs that sign in read
+# PROBE_EMAIL / PROBE_PASSWORD from the environment: a dedicated, least-privilege account, as repo secrets.
+
+on:
+  workflow_call:
+    inputs:
+      base_url:
+        description: 'The site to probe; defaults to crew.json probe.url'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      PROBE_EMAIL:
+        description: 'Account the probe signs in with, when a spec needs one'
+        required: false
+      PROBE_PASSWORD:
+        description: 'Its password'
+        required: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # to report to Agent HQ
+    env:
+      PROBE_OUT: probe-out
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up the crew
+        id: crew
+        uses: vehicle-care-network/agent-crew@v1
+
+      - name: Read the probe settings
+        id: settings
+        env:
+          IN_URL: ${{ inputs.base_url }}
+        run: |
+          url="$IN_URL"
+          [ -n "$url" ] || url=$(jq -r '.probe.url // empty' .github/agents/crew.json)
+          [ -n "$url" ] || { echo "::error::No site to probe: set probe.url in .github/agents/crew.json or pass base_url"; exit 1; }
+          ls e2e/scout/probe/*.spec.ts >/dev/null 2>&1 || { echo "::error::No probes in e2e/scout/probe/"; exit 1; }
+          version=$(node -e 'const p=require("./package.json");process.stdout.write(((p.devDependencies||{})["@playwright/test"]||(p.dependencies||{})["@playwright/test"]||"latest").replace(/^[\^~]/,""))')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Probing $url with @playwright/test@$version"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.crew.outputs.node }}
+
+      # Only Playwright, not the repo's dependencies: the probes are plain specs against a URL.
+      - name: Restore Playwright
+        id: pw
+        uses: actions/cache@v6
+        with:
+          path: |
+            .probe/node_modules
+            ~/.cache/ms-playwright
+          key: scout-probe-${{ runner.os }}-pw${{ steps.settings.outputs.version }}
+
+      - name: Install Playwright
+        if: steps.pw.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .probe && cd .probe
+          [ -f package.json ] || npm init -y >/dev/null
+          npm install --no-audit --no-fund "@playwright/test@${{ steps.settings.outputs.version }}"
+          npx playwright install --with-deps chromium
+
+      - name: Install Chromium's system libraries
+        if: steps.pw.outputs.cache-hit == 'true'
+        run: cd .probe && npx playwright install-deps chromium
+
+      - name: Probe the site
+        env:
+          PROBE_BASE_URL: ${{ steps.settings.outputs.url }}
+          PROBE_EMAIL: ${{ secrets.PROBE_EMAIL }}
+          PROBE_PASSWORD: ${{ secrets.PROBE_PASSWORD }}
+        run: |
+          # The specs resolve @playwright/test from the repo root; point it at the probe's install.
+          [ -e node_modules ] || ln -s .probe/node_modules node_modules
+          .probe/node_modules/.bin/playwright test -c .crew/playwright.probe.config.ts || true
+
+      - name: Report to Agent HQ
+        if: always()
+        env:
+          PROBE_BASE_URL: ${{ steps.settings.outputs.url }}
+        run: node .crew/scripts/scout/probe-report.mjs
+
+      - name: Keep the failure's screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-${{ github.run_id }}
+          path: probe-out/
+          if-no-files-found: ignore
+          retention-days: 7

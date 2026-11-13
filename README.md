@@ -27,7 +27,9 @@ agent-crew (this repo)                          a repo the crew works in
 
 `pr` tests one pull request and posts on it. `regression` tests the latest main across every flow in
 `.github/scout/core-flows.md` (Radar starts it when enough has merged; HQ's Health card runs it by hand),
-or, given a commit and a mission, a release branch Rocket built, reporting to that release in HQ.
+or, given a commit and a mission, a release branch Rocket built, reporting to that release in HQ: that
+run has no agent and runs the committed core and kept flows as they are. `coverage` writes the committed
+specs that core flows still lack (see Three tiers of testing).
 `smoke` runs one scenario HQ hands it (a smoke test saved in HQ, on its schedule: about every 24 hours,
 after each production deploy, or by hand) on main or on the deployed commit, reusing the spec it wrote
 last time; the result goes to the HQ mission that started it, never to a PR.
@@ -37,6 +39,71 @@ flows alone from the specs it kept, work out why each failed last time, and repo
 the results into the previous run so the verdict still covers every flow. Every run also records what
 each flow did and checked, step by step (`scout/steps-reporter.cjs` → `scout-out/steps.json`): HQ shows
 it beside the screenshots, and a failed flow Scout wrote no repro for gets its steps from there.
+
+## Three tiers of testing
+
+The same Scout, three jobs, each with a different owner of the tests and a different trust level:
+
+| Tier | When | What runs | Who writes it |
+| --- | --- | --- | --- |
+| Feature | every PR push | the core flows, the **kept flows** of the areas the diff touches, and Scout's own flows for the change | Scout, guided by you |
+| Release | Rocket's release branch | the committed core and kept flows only, **no agent**: the same gate every release | you, by keeping flows and merging coverage PRs |
+| Production | every 15 minutes | `e2e/scout/probe/*.spec.ts` against the live site, plain Playwright, no agent (`scout-probe.yml`) | you, once |
+
+Tests live in the product repo, so they version with the code:
+
+```
+.github/scout/
+  core-flows.md        the release contract: the journeys that must not break
+  flows/<area>.md      guidance per area (front matter `paths:`; prose for Scout; a table of kept flows)
+e2e/scout/
+  core/                the committed suite from main; `core/_seed/*.mjs` for data beyond the base seed
+  features/<area>/     kept flows, promoted from PR runs in HQ ("Keep this flow"); seeds in `features/_seed/`
+  probe/               production probes: read-only, no seeding, never run by Scout
+  pr-*                 Scout's scratch for one PR (an artifact, 30 days; the sources also go to HQ)
+```
+
+How you steer Scout, from the most general to the most specific:
+
+- **Area guidance** (`.github/scout/flows/<area>.md`): what to always check there, the accounts, the edge
+  cases, what not to test. `scripts/scout/areas.mjs` matches a PR's changed files to the areas' `paths`;
+  Scout gets their text, their kept flows run, and the other areas' kept flows are left out.
+- **Test plan** on the mission in HQ: what Scout makes sure of on every run of that PR (`plan`).
+- **Focus** on one run, from "Ask the crew" or `/scout <note>`.
+- **Adjust this flow** in HQ's evidence viewer: Scout rewrites one spec the way you say and runs it again
+  (`only` + `adjust`).
+- **Keep this flow** in the evidence viewer: HQ commits one of Scout's specs to the PR's branch under
+  `e2e/scout/features/<area>/`, with its seed, and adds a row to the area file. No agent involved.
+
+Mode `coverage` (weekly, from HQ; or "Write missing specs" on the Health card) is a regression run on
+main in which Scout writes a committed spec under `e2e/scout/core/` for every core flow that has none and
+fills the **Committed spec** column; HQ opens a PR with what it wrote. The release gate only ever grows by
+a merge someone reviewed.
+
+### Production probe
+
+`.github/workflows/scout-probe.yml` runs `e2e/scout/probe/*.spec.ts` against the live site (crew.json
+`"probe": { "url": "https://..." }`, or the `base_url` input) and reports to HQ (`POST /api/agents/probe`),
+which shows each repo as up or down on the board's Live dots and pushes a notice when that changes. No
+agent, no emulators: Playwright alone, so a run takes about a minute and every 15 minutes is fine. Specs
+that sign in read `PROBE_EMAIL` and `PROBE_PASSWORD` from repo secrets: a dedicated, least-privilege
+account. Keep the probes few and read-only; they prove the service is serving, not that features work.
+
+The thin caller (every repo):
+
+```yaml
+name: Production probe
+on:
+  schedule: [{ cron: '*/15 * * * *' }]
+  workflow_dispatch: { inputs: { base_url: { required: false, type: string } } }
+concurrency: { group: scout-probe, cancel-in-progress: false }
+jobs:
+  probe:
+    uses: vehicle-care-network/agent-crew/.github/workflows/scout-probe.yml@v1
+    permissions: { contents: read, id-token: write }
+    with: { base_url: ${{ inputs.base_url }} }
+    secrets: inherit
+```
 
 ## Designs: Nova
 
@@ -137,13 +204,16 @@ many runs go to a sandbox, and the rest keep running on Actions as before.
 - `.github/agents/<AGENT>.notes.md` (NOVA, BOLT, IRIS, PATCH, RADAR, SCOUT, ROCKET): the repo's own additions to a
   brief, inserted under "This repo". Keep them short and concrete: conventions the linter can't catch,
   what Scout can log in as, what it can't test here.
-- `.github/agents/risk-map.json` (Radar's impact tiers), `.github/scout/core-flows.md`, the base seed
-  (`scripts/scout/seed.mjs`, `fixtures.mjs`), the Playwright harness with the repo's login helpers
-  (`e2e/scout/_support/scout.ts`; it must compile under the repo's own `tsc`, which is why it isn't shared),
-  and the core smoke specs stay in the repo: they describe the product, not the crew. On a PR, Scout takes
-  the core specs, seed and config from `main` (a PR can't weaken what they check) but the harness from the
-  PR when it has one: a PR that changes the header fixes the sign-in helper in the same PR, and a Patch fix
-  to it takes effect.
+- `.github/agents/risk-map.json` (Radar's impact tiers), `.github/scout/core-flows.md`, the area guidance
+  in `.github/scout/flows/*.md`, the base seed (`scripts/scout/seed.mjs`, `fixtures.mjs`), the Playwright
+  harness with the repo's login helpers (`e2e/scout/_support/scout.ts`; it must compile under the repo's
+  own `tsc`, which is why it isn't shared), the core specs (`e2e/scout/core/`), the kept flows
+  (`e2e/scout/features/`) and the production probes (`e2e/scout/probe/`) stay in the repo: they describe
+  the product, not the crew. On a PR, Scout takes the core specs, seed and config from `main` (a PR can't
+  weaken what they check) but the harness, and the kept flows, from the PR when it has them: a PR that
+  changes the header fixes the sign-in helper in the same PR, a PR that changes a feature updates its
+  kept flow in the same PR (Iris reviews that like any code), and a Patch fix to either takes effect.
+- `probe.url` in `crew.json`: the live site the production probe checks.
 - `release.stagingBranch` (optional): the branch Rocket also force-pushes each release to, so the repo's
   staging site shows what is about to ship.
 - Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) at org level (or on the repo, outside the org,

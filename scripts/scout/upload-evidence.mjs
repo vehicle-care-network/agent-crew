@@ -10,8 +10,9 @@
  * ACTIONS_ID_TOKEN_REQUEST_URL / ACTIONS_ID_TOKEN_REQUEST_TOKEN.
  * On success prints the HQ link and writes it to $GITHUB_OUTPUT as `url`.
  */
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
-import { attachmentBytes, isCore, loadTests } from './results.mjs';
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { attachmentBytes, loadTests, scopeOf } from './results.mjs';
 import { parseOnly } from './steps.mjs';
 
 const out = process.env.SCOUT_OUT || 'scout-out';
@@ -26,8 +27,10 @@ function fail(message) {
 
 // PR 0 is a run with no PR: a regression run on main (SCOUT_MODE=regression), which HQ files under the
 // repo's health, or a run that belongs to the HQ mission that started it (MISSION_ID): a smoke test
-// (SCOUT_MODE=smoke), or a regression run on a release branch.
-const regression = process.env.SCOUT_MODE === 'regression';
+// (SCOUT_MODE=smoke), or a regression run on a release branch. A coverage run (SCOUT_MODE=coverage) is a
+// regression run that also wrote specs for core flows that had none; HQ opens a PR with them.
+const coverage = process.env.SCOUT_MODE === 'coverage';
+const regression = process.env.SCOUT_MODE === 'regression' || coverage;
 const smokeMission = process.env.SCOUT_MODE === 'smoke' || regression ? process.env.MISSION_ID || '' : '';
 if (!hq || !repo || (!pr && !regression && !smokeMission)) fail('AGENT_HQ_URL, GITHUB_REPOSITORY and PR_NUMBER (or MISSION_ID for a smoke test) are required');
 // SCOUT_HQ_TOKEN is for local testing against `next dev` only (see agent-hq lib/github/oidc.ts).
@@ -164,7 +167,9 @@ const manifestTests = tests.map((t, i) => {
   return {
     title: t.title,
     status: t.status,
-    scope: isCore(t) ? 'core' : 'pr',
+    scope: scopeOf(t),
+    // The spec it came from, relative to e2e/scout: what "Keep this flow" promotes.
+    file: String(t.file || '').slice(0, 200),
     project: t.project,
     seconds: t.seconds,
     error: t.error,
@@ -175,6 +180,39 @@ const manifestTests = tests.map((t, i) => {
     video,
   };
 });
+
+/**
+ * The specs this run wrote, sent along with the evidence so HQ keeps them past the artifact's 30 days:
+ * on a PR, Scout's own specs and seeds (`pr-<n>-*`, `_seed/`), which "Keep this flow" in HQ promotes into
+ * the repo; on a coverage run, every file it added or changed under the committed suites and the flow
+ * guidance, which HQ opens as a PR. Sources only: small text files, at most 60 of them.
+ */
+function specFiles() {
+  const list = [];
+  const add = (path) => {
+    if (list.length >= 60 || !existsSync(path) || !/\.(ts|mjs|md)$/.test(path)) return;
+    const size = statSync(path).size;
+    if (size > 0 && size <= 96 * 1024) list.push({ path, name: `specs/${path}` });
+  };
+  if (coverage) {
+    let changed = '';
+    try {
+      changed = execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', 'e2e/scout/core', 'e2e/scout/features', '.github/scout'], { encoding: 'utf8' });
+    } catch {
+      changed = '';
+    }
+    for (const line of changed.split('\n')) {
+      const path = line.slice(3).trim().replace(/^"|"$/g, '');
+      if (path) add(path);
+    }
+  } else if (pr && existsSync('e2e/scout')) {
+    for (const f of readdirSync('e2e/scout')) if (f.startsWith(`pr-${pr}-`)) add(`e2e/scout/${f}`);
+    if (existsSync('e2e/scout/_seed')) for (const f of readdirSync('e2e/scout/_seed')) add(`e2e/scout/_seed/${f}`);
+  }
+  return list;
+}
+const specs = specFiles();
+for (const s of specs) files.push({ name: s.name, attachment: { path: s.path }, type: 'text/plain' });
 
 const urlRes = await fetch(`${hq}/api/evidence/upload-urls`, {
   method: 'POST',
@@ -214,6 +252,11 @@ const manifest = {
   buildErrors,
   tier: process.env.SCOUT_TIER || '',
   ...(only.length ? { only } : {}),
+  ...(coverage ? { coverage: true } : {}),
+  // What this run was asked to do beyond the diff, so the viewer can show it next to the flows.
+  ...(process.env.SCOUT_PLAN ? { plan: String(process.env.SCOUT_PLAN).slice(0, 2000) } : {}),
+  ...(process.env.SCOUT_AREAS ? { areas: String(process.env.SCOUT_AREAS).split(',').filter(Boolean).slice(0, 20) } : {}),
+  specs: specs.map((s) => ({ path: s.path, pathname: byName.get(s.name).pathname })),
   tests: manifestTests.map((t) => ({
     ...t,
     shots: t.shots.map((s) => ({ name: s.name, pathname: byName.get(s.file).pathname })),
@@ -225,5 +268,5 @@ if (!manRes.ok) fail(`HQ refused the manifest (${manRes.status}): ${(await manRe
 const { mission } = await manRes.json();
 
 const link = regression && !smokeMission ? `${hq}/#health` : `${hq}/#evidence=${encodeURIComponent(mission)}`;
-console.log(`[ScoutEvidence] Sent ${files.length} files for ${tests.length} flows${only.length ? ` (re-ran ${only.length}; HQ keeps the rest from the previous run)` : ''}: ${link}`);
+console.log(`[ScoutEvidence] Sent ${files.length} files for ${tests.length} flows${specs.length ? ` and ${specs.length} spec file${specs.length === 1 ? '' : 's'}` : ''}${only.length ? ` (re-ran ${only.length}; HQ keeps the rest from the previous run)` : ''}: ${link}`);
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `url=${link}\n`);

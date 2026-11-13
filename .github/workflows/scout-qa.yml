@@ -5,12 +5,20 @@ name: Scout QA
 # failures to its Ideas inbox. Given a `sha` and a `mission_id` (a release branch Rocket built), the same
 # run reports to that release mission instead of the repo's health. Mode `smoke` runs one scenario HQ gives it (a saved smoke test, on a
 # schedule or after a production deploy) on main or on the commit HQ names; the result goes to the HQ
-# mission that started it. Reusable: a repo's `.github/workflows/scout-qa.yml` holds the triggers (the
-# `scout` label, `/scout` comments, manual runs, Agent HQ) and calls this. Brief: scout/PROMPT.md.
+# mission that started it. Mode `coverage` is a regression run on main that also writes a committed spec
+# for every core flow without one; HQ opens a PR with what it wrote. Reusable: a repo's
+# `.github/workflows/scout-qa.yml` holds the triggers (the `scout` label, `/scout` comments, manual runs,
+# Agent HQ) and calls this. Brief: scout/PROMPT.md.
 #
-# The repo provides: .github/agents/crew.json (scout settings), .github/scout/core-flows.md,
-# scripts/scout/seed.mjs and fixtures.mjs, e2e/scout/_support/scout.ts (the Playwright harness and logins)
-# and e2e/scout/core/*.spec.ts.
+# The repo provides: .github/agents/crew.json (scout settings), .github/scout/core-flows.md, the flow
+# guidance per area in .github/scout/flows/*.md, scripts/scout/seed.mjs and fixtures.mjs,
+# e2e/scout/_support/scout.ts (the Playwright harness and logins), e2e/scout/core/*.spec.ts and the
+# flows kept from PR runs in e2e/scout/features/<area>/.
+#
+# Three tiers of testing, one workflow: a PR gets the core flows, the kept flows of the areas it touches
+# and Scout's own flows for the change; a release branch (regression with a mission) gets the committed
+# flows only, no agent, so the gate is the same every time; main's health is the regression run.
+# Production itself is probed by scout-probe.yml, which never involves Scout.
 
 on:
   workflow_call:
@@ -25,7 +33,7 @@ on:
         required: false
     inputs:
       params:
-        description: 'JSON from Agent HQ: { mode: pr|regression|smoke, pr_number, focus, mission_id, scenario_id, sha, only }. Wins over the inputs below. regression with sha + mission_id: a release branch, reporting to that mission. only: flow titles (one per line) to re-run instead of the whole suite; HQ folds the results into the previous run.'
+        description: 'JSON from Agent HQ: { mode: pr|regression|smoke|coverage, pr_number, focus, plan, mission_id, scenario_id, sha, only, adjust }. Wins over the inputs below. regression with sha + mission_id: a release branch, reporting to that mission (committed flows only, no agent). plan: the mission test plan, what to make sure of. only: flow titles (one per line) to re-run instead of the whole suite; HQ folds the results into the previous run. adjust (with only): how to change that flow before running it again.'
         required: false
         type: string
         default: ''
@@ -77,7 +85,7 @@ jobs:
           COMMENT: ${{ inputs.comment }}
         run: |
           mode=$(jq -r '.mode // empty' <<<"$PARAMS"); mode="${mode:-${IN_MODE:-pr}}"
-          case "$mode" in regression|smoke) ;; *) mode=pr ;; esac
+          case "$mode" in regression|smoke|coverage) ;; *) mode=pr ;; esac
           echo "SCOUT_MODE=$mode" >> "$GITHUB_ENV"
           # Smoke tests report to the HQ mission that started them (no PR comment).
           echo "MISSION_ID=$(jq -r '.mission_id // empty' <<<"$PARAMS")" >> "$GITHUB_ENV"
@@ -86,9 +94,15 @@ jobs:
           focus=$(jq -r '.focus // empty' <<<"$PARAMS")
           [ -n "$focus" ] || focus="${IN_FOCUS:-$(printf '%s' "$COMMENT" | head -1 | sed -E 's#^/scout[[:space:]]*##')}"
           # Only: flow titles HQ wants run again (one per line), e.g. one that timed out. Scout re-runs
-          # just those; HQ keeps the rest of the verdict from the previous run.
+          # just those; HQ keeps the rest of the verdict from the previous run. Adjust: how to change
+          # that flow first (a note from the evidence viewer's "Adjust this flow").
           only=$(jq -r '.only // empty' <<<"$PARAMS" | head -10)
           { echo "SCOUT_ONLY<<SCOUT_EOF"; printf '%s\n' "$only"; echo "SCOUT_EOF"; } >> "$GITHUB_ENV"
+          adjust=$(jq -r '.adjust // empty' <<<"$PARAMS" | head -c 2000)
+          { echo "SCOUT_ADJUST<<SCOUT_EOF"; printf '%s\n' "$adjust"; echo "SCOUT_EOF"; } >> "$GITHUB_ENV"
+          # Plan: the mission's test plan, written in HQ: what to make sure of, on every run of this mission.
+          plan=$(jq -r '.plan // empty' <<<"$PARAMS" | head -c 2000)
+          { echo "SCOUT_PLAN<<SCOUT_EOF"; printf '%s\n' "$plan"; echo "SCOUT_EOF"; } >> "$GITHUB_ENV"
           if [ "$mode" = smoke ]; then
             # The commit HQ names (a production deploy's), else the default branch's head.
             number=0; sha=$(jq -r '.sha // empty' <<<"$PARAMS" | tr -cd 'a-f0-9')
@@ -97,9 +111,9 @@ jobs:
               sha=$(gh api "repos/${{ github.repository }}/commits/$branch" --jq .sha)
             fi
             [ -n "$focus" ] || { echo "::error::A smoke test needs the scenario in focus"; exit 1; }
-          elif [ "$mode" = regression ]; then
+          elif [ "$mode" = regression ] || [ "$mode" = coverage ]; then
             # The commit HQ names (a release branch's head, reporting to the release mission), else the
-            # default branch's head (the repo's health).
+            # default branch's head (the repo's health; coverage always).
             number=0; sha=$(jq -r '.sha // empty' <<<"$PARAMS" | tr -cd 'a-f0-9')
             if [ -z "$sha" ]; then
               branch=$(gh api "repos/${{ github.repository }}" --jq .default_branch)
@@ -138,6 +152,7 @@ jobs:
             scripts/scout
             e2e/scout/_support
             e2e/scout/core
+            e2e/scout/features
           sparse-checkout-cone-mode: false
 
       - name: Install them over the PR
@@ -147,6 +162,12 @@ jobs:
           cp -R .scout-tooling/.github/scout/. .github/scout/
           cp -R .scout-tooling/scripts/scout/. scripts/scout/
           cp -R .scout-tooling/e2e/scout/core e2e/scout/
+          # Kept feature flows: main's fill in what the PR doesn't have; the PR's own copies win, since a PR
+          # that changes a feature updates its kept flow in the same PR (Iris reviews that like any code).
+          if [ -d .scout-tooling/e2e/scout/features ]; then
+            mkdir -p e2e/scout/features
+            cp -Rn .scout-tooling/e2e/scout/features/. e2e/scout/features/
+          fi
           # The harness (sign-in helper, evidence) has to match the UI under test, so the PR's copy wins when
           # the PR has one: a PR that changes the header fixes the sign-in helper in the same PR, and a Patch
           # fix to it takes effect (main's copy laid over the PR made every core flow fail at sign-in after a
@@ -165,34 +186,56 @@ jobs:
 
       # How much testing this PR deserves, from Radar's risk map: low-impact changes (docs, tests, tooling)
       # get the smoke flows only and no agent; the rest get a flow budget and a turn cap by impact.
+      # Also which areas of the product the change touches (.github/scout/flows/*.md): their guidance goes
+      # to Scout, their kept flows run, and the kept flows of every other area are left out (SCOUT_IGNORE).
       - name: Size the run
         id: scope
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           FOCUS: ${{ steps.pr.outputs.focus }}
         run: |
+          mkdir -p scout-out
+          if [ "$SCOUT_MODE" = pr ]; then
+            gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files?per_page=100" --paginate --jq '.[].filename' > changed-files.txt
+            node .crew/scripts/scout/areas.mjs < changed-files.txt > scout-out/areas.json
+          else
+            node .crew/scripts/scout/areas.mjs --all > scout-out/areas.json
+          fi
+          echo "SCOUT_AREAS=$(jq -r '[.areas[].slug] | join(",")' scout-out/areas.json)" >> "$GITHUB_ENV"
+          echo "SCOUT_IGNORE=$(jq -r '.ignore | join(",")' scout-out/areas.json)" >> "$GITHUB_ENV"
+          # The guidance of those areas, as one file the brief points Scout at.
+          jq -r '.areas[] | "## \(.title) (\(.file))\n\n\(.guidance)\n"' scout-out/areas.json > scout-out/guidance.md
+          [ -s scout-out/guidance.md ] || rm -f scout-out/guidance.md
+          echo "Areas: $(jq -r '[.areas[].slug] | join(", ")' scout-out/areas.json)${SCOUT_PLAN:+; the mission has a test plan}"
           if [ -n "$SCOUT_ONLY" ]; then
             # A re-run of named flows: those specs and nothing else, whatever the mode. The grep that
-            # selects them goes to the agent and to the run for the record.
-            case "$SCOUT_MODE" in regression) tier=regression ;; smoke) tier=smoke ;; *) tier=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files?per_page=100" --paginate --jq '.[].filename' | node .crew/scripts/agents/impact.mjs - | jq -r .tier) ;; esac
+            # selects them goes to the agent and to the run for the record. With ADJUSTMENTS, Scout
+            # rewrites the flow first, so it gets a few more turns.
+            case "$SCOUT_MODE" in regression|coverage) tier=regression ;; smoke) tier=smoke ;; *) tier=$(node .crew/scripts/agents/impact.mjs - < changed-files.txt | jq -r .tier) ;; esac
             agent=true; turns=40; budget="only the flows named under FLOWS TO RE-RUN"
+            [ -z "$SCOUT_ADJUST" ] || { turns=60; budget="only the flows named under FLOWS TO RE-RUN, changed as ADJUSTMENTS asks"; }
             echo "SCOUT_ONLY_GREP=$(node -e 'import("./.crew/scripts/scout/steps.mjs").then(m=>process.stdout.write(m.onlyGrep(m.parseOnly(process.env.SCOUT_ONLY))))')" >> "$GITHUB_ENV"
+          elif [ "$SCOUT_MODE" = regression ] && [ -n "$MISSION_ID" ]; then
+            # A release branch: the committed core and kept flows, run as they are. No agent, so the
+            # gate is the same for every release and can only change by a merge someone reviewed.
+            tier=regression; agent=false; turns=0; budget="none: the committed flows only"
           elif [ "$SCOUT_MODE" = regression ]; then
             tier=regression; agent=true; turns=150; budget="every flow in .github/scout/core-flows.md"
+          elif [ "$SCOUT_MODE" = coverage ]; then
+            tier=regression; agent=true; turns=150; budget="a committed spec for every core flow that has none, written under e2e/scout/core/"
           elif [ "$SCOUT_MODE" = smoke ]; then
             tier=smoke; agent=true; turns=60; budget="the smoke-test scenario in SCOUT_FOCUS, and nothing else"
           else
-            gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files?per_page=100" --paginate --jq '.[].filename' > changed-files.txt
             tier=$(node .crew/scripts/agents/impact.mjs - < changed-files.txt | jq -r .tier)
             agent=true
             case "$tier" in
-              low)      turns=30; budget="none: smoke flows only"; [ -z "$FOCUS" ] && agent=false ;;
+              low)      turns=30; budget="none: smoke flows only"; [ -z "$FOCUS" ] && [ -z "$SCOUT_PLAN" ] && agent=false ;;
               normal)   turns=45; budget="1 to 2 flows" ;;
               high)     turns=70; budget="2 to 3 flows" ;;
               critical) turns=100; budget="up to 5 flows, including edge cases" ;;
             esac
-            rm -f changed-files.txt
           fi
+          rm -f changed-files.txt
           echo "Impact $tier: agent=$agent, budget $budget, max $turns turns"
           { echo "tier=$tier"; echo "agent=$agent"; echo "turns=$turns"; echo "budget=$budget"; } >> "$GITHUB_OUTPUT"
 
@@ -208,6 +251,7 @@ jobs:
       # A regression run HQ started for a release mission reports to it like a smoke test does.
       - name: Tell HQ Scout started
         if: env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke' || (env.SCOUT_MODE == 'regression' && env.MISSION_ID != '')
+        # (A coverage run, like a regression run on main, reports only at the end, through the evidence.)
         continue-on-error: true
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -268,9 +312,11 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       # Re-runs (after Patch pushes a fix, or a new commit) start from the specs Scout already wrote for this
-      # PR, instead of exploring and writing them from scratch.
+      # PR, instead of exploring and writing them from scratch. Not on a release branch (committed flows
+      # only) and not for coverage (it writes committed specs from a clean checkout).
       - name: Reuse specs from the previous run
         id: reuse
+        if: env.SCOUT_MODE != 'coverage' && !(env.SCOUT_MODE == 'regression' && env.MISSION_ID != '')
         env:
           NAME: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'smoke' && format('smoke-{0}', env.SCENARIO_ID || env.MISSION_ID) || format('pr-{0}', steps.pr.outputs.number) }}
         run: |
@@ -286,6 +332,13 @@ jobs:
 
       - name: Start the app on emulators
         run: bash .crew/scripts/scout/start-env.sh
+
+      # The committed flows' own data: seed scripts kept beside the core and feature specs.
+      - name: Load the kept flows' seeds
+        run: |
+          set -a; . ./.env.local; set +a
+          for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do [ -f "$f" ] && { echo "[Scout] Seeding $f"; node "$f"; }; done
+          true
 
       # Specs reused from the previous run need the data their seed scripts create.
       - name: Load seeds from the previous run
@@ -326,11 +379,15 @@ jobs:
             PR_NUMBER: ${{ steps.pr.outputs.number }}
             SCOUT_BASE_URL: ${{ steps.crew.outputs.scout_base_url }}
             SCOUT_FOCUS: ${{ steps.pr.outputs.focus || '(none)' }}
+            TEST PLAN: ${{ env.SCOUT_PLAN || '(none)' }}
+            AREAS: ${{ env.SCOUT_AREAS || '(none matched)' }}
+            GUIDANCE FILE: ${{ env.SCOUT_AREAS && 'scout-out/guidance.md' || '(none)' }}
             IMPACT: ${{ steps.scope.outputs.tier }}
             FLOW BUDGET: ${{ steps.scope.outputs.budget }}
             SPECS FROM THE PREVIOUS RUN: ${{ steps.reuse.outputs.reused == 'true' && 'yes, under e2e/scout' || 'none' }}
             FLOWS TO RE-RUN: ${{ env.SCOUT_ONLY || '(none: a full run)' }}
             PLAYWRIGHT GREP FOR THEM: ${{ env.SCOUT_ONLY_GREP || '(none)' }}
+            ADJUSTMENTS: ${{ env.SCOUT_ADJUST || '(none)' }}
           claude_args: |
             --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_SCOUT || 'claude-sonnet-5-5' }}
             --max-turns ${{ steps.scope.outputs.turns }}
@@ -343,7 +400,7 @@ jobs:
         if: always() && steps.scout.outputs.execution_file != ''
         env:
           HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
-        run: node .crew/scripts/agents/usage.mjs "${{ steps.scout.outputs.execution_file }}" scout "${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'smoke' && 'smoke' || 'qa' }}" "${{ env.MISSION_ID }}" "${{ steps.pr.outputs.number }}"
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.scout.outputs.execution_file }}" scout "${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'coverage' && 'coverage' || env.SCOUT_MODE == 'smoke' && 'smoke' || 'qa' }}" "${{ env.MISSION_ID }}" "${{ steps.pr.outputs.number }}"
 
       # The comment's pass/fail comes from this run, not from the agent's own runs: every spec, core and
       # PR-specific, is executed once more against the final state of the tests. A re-run of named flows
@@ -361,7 +418,7 @@ jobs:
           fi
 
       - name: Keep the specs for the next run
-        if: always()
+        if: always() && env.SCOUT_MODE != 'coverage' && !(env.SCOUT_MODE == 'regression' && env.MISSION_ID != '')
         uses: actions/upload-artifact@v7
         with:
           name: scout-specs-${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'smoke' && format('smoke-{0}', env.SCENARIO_ID || env.MISSION_ID) || format('pr-{0}', steps.pr.outputs.number) }}
@@ -401,7 +458,7 @@ jobs:
           retention-days: 14
 
       - name: Send regression failures to HQ's Ideas
-        if: always() && env.SCOUT_MODE == 'regression'
+        if: always() && (env.SCOUT_MODE == 'regression' || env.SCOUT_MODE == 'coverage') && env.MISSION_ID == ''
         run: |
           node .crew/scripts/scout/regression-ideas.mjs > scout-out/regression-ideas.json
           node .crew/scripts/agents/hq.mjs ideas-post scout-out/regression-ideas.json regression
