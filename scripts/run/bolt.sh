@@ -45,7 +45,7 @@ if dry_run; then
   say "DRY_RUN: a canned change instead of running Claude"
   echo "Dry run $(date -u +%FT%TZ)" > DRY_RUN.txt
   jq -n '{title:"Dry run from the sandbox", summary:"Nothing was built."}' > agent-out/pr.json
-  jq -n '{read:"cant-tell", why:"Dry run: no test was written.", files:[], passed:0, failed:0}' > agent-out/check.json
+  jq -n '{read:"wrong", why:"Dry run: the canned test fails.", files:["DRY_RUN.txt"], passed:0, failed:1}' > agent-out/check.json
 else
   run_claude "$BOLT_MODE" "$PROMPT" "$MODEL" 200 Bash,Read,Write,Edit,Glob,Grep
 fi
@@ -84,7 +84,9 @@ if [ "$BOLT_MODE" = check ]; then
     files=$(jq -c --arg p "$path" --arg n "$pathname" '. + [{path: $p, pathname: $n}]' <<<"$files")
   done < <(jq -r '.files[]? // empty' agent-out/check.json | head -6)
   [ "$READ" = cant-tell ] || [ "$files" != '[]' ] || die "Bolt read it as $READ but named no new or changed test file in agent-out/check.json"
-  hq_report "$(jq -c --arg l "$BOLT_LEVEL" --argjson f "$files" '{agent: "bolt", type: "check", level: $l, read: .read, why: ((.why // "") | tostring | .[0:600]), passed: ((.passed // 0) | (tonumber? // 0)), failed: ((.failed // 0) | (tonumber? // 0)), files: $f}' agent-out/check.json)"
+  report=$(jq -c --arg l "$BOLT_LEVEL" --argjson f "$files" '{agent: "bolt", type: "check", level: $l, read: .read, why: ((.why // "") | tostring | .[0:600]), passed: ((.passed // 0) | (tonumber? // 0)), failed: ((.failed // 0) | (tonumber? // 0)), files: $f}' agent-out/check.json)
+  if dry_run; then say "DRY_RUN: would report $report"; fi
+  hq_report "$report"
   say "Done: $READ, $n test file(s)."
   exit 0
 fi
