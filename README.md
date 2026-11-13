@@ -86,6 +86,19 @@ integration fix, "Fix the integration of #N for <version>".
 4. The agent runs with `.crew/briefs/<AGENT>.md`, reports to HQ with `.crew/scripts/agents/hq.mjs`
    (GitHub OIDC, no HQ secret anywhere), and Bolt and Patch push as the HQ App with a token HQ mints.
 
+### The same run off GitHub Actions
+
+An agent can also run in a sandbox HQ starts itself (a Vercel Sandbox: a Linux microVM with Node, git,
+`gh`, `jq` and Claude Code). `scripts/run/<agent>.sh` is that agent's whole run as one script: the
+workflow's steps in order, with `claude -p` in place of claude-code-action. HQ clones the repo on the
+PR's branch, lays this repo into `.crew/` the way the setup action does, and runs the script with the
+request in `PARAMS` (the same JSON as the workflow input), `GITHUB_REPOSITORY` and a `GH_TOKEN` for the
+repo, the Claude credential, and HQ's address. Instead of GitHub's OIDC endpoint, HQ points
+`ACTIONS_ID_TOKEN_REQUEST_URL` at its own `/api/runner/id-token` with a job token, so `hq.mjs` and
+`usage.mjs` run unchanged. `DRY_RUN=1` stops before Claude and GitHub: a canned review, nothing posted.
+So far only Iris has a script (`scripts/run/iris.sh`); HQ's Setup view (Runners) chooses, per agent, how
+many runs go to a sandbox, and the rest keep running on Actions as before.
+
 ## What a repo provides
 
 `.github/agents/crew.json`:
