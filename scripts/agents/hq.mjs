@@ -10,11 +10,12 @@
  *   node .crew/scripts/agents/hq.mjs github-token                  # prints a token to push as the HQ App (Bolt, Patch)
  *   node .crew/scripts/agents/hq.mjs qa running|error              # Scout: the run started / broke before results (env PR_NUMBER, HEAD_SHA, RUN_URL; MISSION_ID for a smoke test)
  *   node .crew/scripts/agents/hq.mjs model <agent>                 # prints the model chosen for the agent in HQ (empty when none; never fails)
+ *   node .crew/scripts/agents/hq.mjs specs-pull                    # Scout in a sandbox: the specs HQ kept from this PR's previous run, into e2e/scout (env PR_NUMBER); prints the count
  *
  * Env: AGENT_HQ_URL (default https://agent-hq-cyan.vercel.app), ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
  */
-import { readFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
 
 const hq = (process.env.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app').replace(/\/$/, '');
 const [command, missionId, ...rest] = process.argv.slice(2);
@@ -90,9 +91,29 @@ if (command === 'qa') {
 if (command === 'ideas-post') {
   const [file, scope] = [missionId, rest[0]];
   const ideas = JSON.parse(readFileSync(file, 'utf8'));
-  const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+  // On Actions the run's page; in a sandbox HQ hands the run's link in as RUN_URL.
+  const runUrl = process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : process.env.RUN_URL || '';
   const res = await post('/api/agents/ideas', { action: 'post', scope, runUrl, ideas });
   console.log(`[AgentHq] Sent ${ideas.length} ideas; ${res.added} new`);
+  process.exit(0);
+}
+if (command === 'specs-pull') {
+  // Scout off GitHub Actions has no artifact from the previous run on this PR; HQ kept the spec sources
+  // that run sent with its evidence (crew 1.7+). They go back where they were, under e2e/scout/.
+  const pr = Number(process.env.PR_NUMBER) || 0;
+  if (!pr) fail('specs-pull needs PR_NUMBER');
+  const { specs = [], runId = '' } = await post('/api/agents/specs', { pr });
+  let written = 0;
+  for (const { path, url } of specs) {
+    if (!/^e2e\/scout\/[\w./-]+$/.test(path) || path.includes('..')) continue;
+    const res = await fetch(url);
+    if (!res.ok) fail(`Download of ${path} failed (${res.status})`);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, Buffer.from(await res.arrayBuffer()));
+    written++;
+  }
+  console.error(`[AgentHq] ${written ? `Reused ${written} spec file(s) from run ${runId}` : 'No specs kept from a previous run'}`);
+  console.log(written);
   process.exit(0);
 }
 
