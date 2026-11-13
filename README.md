@@ -155,16 +155,39 @@ integration fix, "Fix the integration of #N for <version>".
 
 ### The same run off GitHub Actions
 
-An agent can also run in a sandbox HQ starts itself (a Vercel Sandbox: a Linux microVM with Node, git,
-`gh`, `jq` and Claude Code). `scripts/run/<agent>.sh` is that agent's whole run as one script: the
-workflow's steps in order, with `claude -p` in place of claude-code-action. HQ clones the repo on the
-PR's branch, lays this repo into `.crew/` the way the setup action does, and runs the script with the
-request in `PARAMS` (the same JSON as the workflow input), `GITHUB_REPOSITORY` and a `GH_TOKEN` for the
-repo, the Claude credential, and HQ's address. Instead of GitHub's OIDC endpoint, HQ points
-`ACTIONS_ID_TOKEN_REQUEST_URL` at its own `/api/runner/id-token` with a job token, so `hq.mjs` and
-`usage.mjs` run unchanged. `DRY_RUN=1` stops before Claude and GitHub: a canned review, nothing posted.
-So far only Iris has a script (`scripts/run/iris.sh`); HQ's Setup view (Runners) chooses, per agent, how
-many runs go to a sandbox, and the rest keep running on Actions as before.
+Every agent can also run in a sandbox HQ starts itself (a Vercel Sandbox: an Ubuntu microVM with Node,
+git, `gh`, `jq`, `sudo` and Claude Code). `scripts/run/<agent>.sh` is that agent's whole run as one
+script: the workflow's steps in order, with `claude -p` in place of claude-code-action; `common.sh` holds
+what they share (HQ reports and the heartbeat, the Claude run with its usage sent to HQ, the App-identity
+commit and push). HQ clones the repo on the branch the agent works on (the PR's for Iris, Patch and Nova,
+Bolt's `branch`, else the default branch), lays this repo into `.crew/` the way the setup action does, and
+runs the script with the request in `PARAMS` (the same JSON as the workflow input), `GITHUB_REPOSITORY`
+and a `GH_TOKEN` for the repo scoped to what that agent's workflow had (read; review, label and comment;
+push for Bolt, Patch and Rocket, who push with it as the HQ App, so the repo's workflows run on the push),
+the Claude credential, HQ's address and `RUN_URL` (the mission in HQ). Instead of GitHub's OIDC endpoint,
+HQ points `ACTIONS_ID_TOKEN_REQUEST_URL` at its own `/api/runner/id-token` with a job token, so `hq.mjs`
+and `usage.mjs` run unchanged. `DRY_RUN=1` stops before Claude and before anything is pushed or posted.
+
+What differs from Actions, agent by agent:
+
+- **Scout** needs Java (the emulators) and Playwright's Chromium: HQ keeps a prepared image (a snapshot
+  with both installed, plus the emulator jars and the Playwright MCP server; rebuilt weekly) and, without
+  one, the script installs them itself (about a minute and a half). The specs Scout wrote on a PR's earlier
+  run come back from HQ (`hq.mjs specs-pull`, the sources HQ kept with the run's evidence) instead of an
+  artifact; regression and smoke runs start from the committed flows every time. The app under test is
+  started without the run's credentials in its environment.
+- **Iris** takes the repo's `pull_request` event when HQ passes it on (`params.event`, `params.action`),
+  with the workflow's skips (drafts, `agent/*` branches, crew-only PRs, nothing new since her review).
+- **Radar** has a `label` mode (the impact label, no AI) for HQ to run on PR events, and HQ's tick keeps
+  the audit and regression-check schedules for repos off Actions; the daily "is main due?" decision lives in
+  HQ (it reads HQ's own record of the last run, where `regression-due.mjs` reads GitHub's run list).
+- Concurrency: HQ replaces a running Scout or Iris on the same PR with the new run and refuses a second
+  Rocket per repo, as the workflows' groups did.
+
+HQ's Setup view (Runners) decides where runs go: a repo moved as a whole runs every agent in sandboxes
+and only there (HQ then starts what the repo's thin callers used to, so they can be deleted), and for the
+other repos each agent has a share of runs that try a sandbox and fall back to Actions. Bazm Front and
+Bazm Kitchen are moved by default.
 
 ## What a repo provides
 
