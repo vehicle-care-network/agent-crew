@@ -49,18 +49,26 @@ hq_status() { [ -n "$MISSION_ID" ] && node "$HQ_MJS" status "$MISSION_ID" "$AGEN
 # The run's final word to HQ. Marks the run as reported, so the exit trap sends no second "failed".
 hq_report() { [ -n "$MISSION_ID" ] || { say "No mission: not reporting ${1:0:80}"; return 0; }; node "$HQ_MJS" report "$MISSION_ID" "$1"; REPORTED=1; }
 # An empty status is a heartbeat: it keeps HQ from flagging a long run as stalled.
+# Detached from the run's output (a sleeping child would hold the sandbox command open for up to ten
+# minutes after the script ended), and stopped with its children on exit.
 heartbeat_start() {
   [ -n "$MISSION_ID" ] || return 0
   hq_status "${1:-}"
-  ( while sleep 600; do node "$HQ_MJS" status "$MISSION_ID" "$AGENT" "" || true; done ) &
+  ( while sleep 600; do node "$HQ_MJS" status "$MISSION_ID" "$AGENT" "" || true; done ) >/dev/null 2>&1 < /dev/null &
   HEARTBEAT=$!
+}
+heartbeat_stop() {
+  [ -n "$HEARTBEAT" ] || return 0
+  pkill -P "$HEARTBEAT" 2>/dev/null || true
+  kill "$HEARTBEAT" 2>/dev/null || true
+  HEARTBEAT=""
 }
 # Whatever fails, HQ hears about it (as the workflows' "Tell HQ it failed" step), and the heartbeat stops.
 # A script sets FAIL_REASON before dying when it has something better than the generic line.
 FAIL_REASON=""
 finish() {
   local code=$?
-  [ -n "$HEARTBEAT" ] && kill "$HEARTBEAT" 2>/dev/null || true
+  heartbeat_stop
   if [ "$code" -ne 0 ] && [ -n "$MISSION_ID" ] && [ -z "$REPORTED" ]; then
     local reason="${FAIL_REASON:-The $NAME run failed in the sandbox. See $RUN_URL}"
     node "$HQ_MJS" report "$MISSION_ID" "$(jq -n --arg a "$AGENT" --arg e "${reason:0:400}" '{agent:$a,type:"failed",error:$e}')" || true
@@ -78,7 +86,7 @@ crew_render() {
   if [ ! -f .github/agents/crew.json ]; then
     local base
     base=$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)
-    git fetch -q origin "$base"
+    git fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base"
     if git cat-file -e "origin/$base:.github/agents/crew.json" 2>/dev/null; then
       say "This branch has no .github/agents/crew.json; using $base's"
       git archive "origin/$base" .github/agents | tar -x
@@ -91,6 +99,13 @@ install_deps() { say "Installing dependencies"; bash -c "$(crew_cmd install)"; }
 scout_port() { jq -r '.scout.port' .github/agents/crew.json; }
 # A full history: merges, `git log` and land.mjs need it; a clone HQ made may be shallow.
 unshallow() { if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch -q --unshallow || git fetch -q; fi; }
+# A branch's tip from the remote, checked out as a local branch of that name (the clone HQ made may hold
+# only one revision, detached, with no remote-tracking refs).
+checkout_branch() {
+  local b="$1"
+  git fetch -q origin "+refs/heads/$b:refs/remotes/origin/$b" || die "Couldn't fetch $b"
+  git checkout -q -B "$b" "origin/$b" || die "Couldn't check out $b"
+}
 # The PR, as `gh api` returns it, into pr.json; refuses forks (no secrets go near fork code).
 load_pr() {
   local n="$1"

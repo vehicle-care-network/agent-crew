@@ -22,7 +22,7 @@ if [ "$PATCH_REASON" != request ] && [ "$PATCH_REASON" != conflicts ]; then
   case "$BRANCH" in agent/*) ;; *) die "Patch only fixes agent/* branches, not $BRANCH" ;; esac
 fi
 say "PR #$PR_NUMBER on $BRANCH (base $BASE), reason $PATCH_REASON"
-git fetch -q origin "$BRANCH" && git checkout -q "$BRANCH" && git reset -q --hard "origin/$BRANCH"
+checkout_branch "$BRANCH"
 unshallow
 mkdir -p agent-out
 

@@ -18,7 +18,7 @@ if [ -n "$NOVA_PR_NUMBER" ]; then
   [ "$(jq -r .state pr.json)" = open ] || die "PR #$NOVA_PR_NUMBER is not open"
   ref=$(jq -r .head.ref pr.json)
   rm -f pr.json
-  git fetch -q origin "$ref" && git checkout -q "$ref" && git reset -q --hard "origin/$ref"
+  checkout_branch "$ref"
   say "Redesigning PR #$NOVA_PR_NUMBER on $ref"
 else
   say "A new design on $(git rev-parse --abbrev-ref HEAD)"

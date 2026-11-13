@@ -50,6 +50,8 @@ scout_finish() {
   exit "$code"
 }
 trap scout_finish EXIT
+# A full set of remote refs: the commit under test may sit on another branch than the one HQ cloned.
+git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
 
 # ---- The repo's Scout pieces, from the clone's head (the default branch), then the commit under test.
 # Branches opened before Scout's data existed don't contain it, so main's crew.json, risk map, core flows,

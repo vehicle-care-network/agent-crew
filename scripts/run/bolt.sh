@@ -20,7 +20,7 @@ if [ -n "$BOLT_BRANCH" ]; then
   [[ "$BOLT_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || die "Bad branch '$BOLT_BRANCH'"
   gh api "repos/$GITHUB_REPOSITORY/branches/$BOLT_BRANCH" --jq .name >/dev/null || die "No branch $BOLT_BRANCH in $GITHUB_REPOSITORY"
   BRANCH="$BOLT_BRANCH"
-  git fetch -q origin "$BOLT_BRANCH" && git checkout -q "$BOLT_BRANCH" && git reset -q --hard "origin/$BOLT_BRANCH"
+  checkout_branch "$BOLT_BRANCH"
   say "Building on the existing branch $BRANCH at $(git rev-parse --short HEAD)"
 else
   BRANCH="agent/$MISSION_ID"
