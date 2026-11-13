@@ -70,9 +70,20 @@ finish() {
 trap finish EXIT
 
 # ---- The crew and the repo
-# Renders the briefs for this repo (the setup action's second step). Prints the node version it would pick.
+# Renders the briefs for this repo (the setup action's second step). A branch that predates the crew's
+# config (a PR opened before crew.json existed) borrows `.github/agents` from the default branch, the way
+# Scout lays main's pieces over a PR, instead of failing.
 crew_render() {
   [ -f .crew/scripts/setup/render.mjs ] || die ".crew/ is missing; the runner lays the crew in before starting this"
+  if [ ! -f .github/agents/crew.json ]; then
+    local base
+    base=$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)
+    git fetch -q origin "$base"
+    if git cat-file -e "origin/$base:.github/agents/crew.json" 2>/dev/null; then
+      say "This branch has no .github/agents/crew.json; using $base's"
+      git archive "origin/$base" .github/agents | tar -x
+    fi
+  fi
   node .crew/scripts/setup/render.mjs
 }
 crew_cmd() { jq -r --arg k "$1" '.commands[$k] // empty' .github/agents/crew.json; }
