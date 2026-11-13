@@ -48,15 +48,18 @@ async function githubIdToken() {
 const idToken = process.env.SCOUT_HQ_TOKEN || (await githubIdToken());
 const auth = { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' };
 
-const tests = loadTests(out);
-if (!tests?.length) {
-  // Nothing ran (the app or Playwright failed first). Tell HQ so the mission doesn't sit in "testing".
+/** Fails the step, first telling HQ the run broke so the mission doesn't sit in "testing" with no result. */
+async function failAndTellHq(message) {
   if (!regression || smokeMission) {
     const body = { pr, ...(smokeMission ? { missionId: smokeMission } : {}), sha: HEAD_SHA, runUrl: RUN_URL, state: 'error' };
     await fetch(`${hq}/api/agents/qa`, { method: 'POST', headers: auth, body: JSON.stringify(body) }).catch(() => {});
   }
-  fail('No Playwright results to send');
+  fail(message);
 }
+
+const tests = loadTests(out);
+// Nothing ran (the app or Playwright failed first).
+if (!tests?.length) await failAndTellHq('No Playwright results to send');
 
 // Type errors in the PR's own files (the workflow's "Check the build" step): the flows were skipped.
 const buildErrorsPath = `${out}/build-errors.txt`;
@@ -219,20 +222,29 @@ const urlRes = await fetch(`${hq}/api/evidence/upload-urls`, {
   headers: auth,
   body: JSON.stringify({ repo, pr, files: files.map((f) => f.name) }),
 });
-if (!urlRes.ok) fail(`HQ refused upload URLs (${urlRes.status}): ${(await urlRes.text()).slice(0, 300)}`);
+if (!urlRes.ok) await failAndTellHq(`HQ refused upload URLs (${urlRes.status}): ${(await urlRes.text()).slice(0, 300)}`);
 const { urls } = await urlRes.json();
 const byName = new Map(urls.map((u) => [u.name, u]));
 
-// Upload a few at a time; videos are the large ones.
+// Upload a few at a time; videos are the large ones. Vercel Blob reads the type from `x-content-type`;
+// without it Blob guesses from the extension, and a `.ts` spec is guessed as video/mp2t and refused.
+// A spec that still fails to upload is left out of the manifest: losing it must not lose Scout's verdict.
 let next = 0;
+const specNames = new Set(specs.map((s) => s.name));
+const lostSpecs = new Set();
 async function worker() {
   while (next < files.length) {
     const f = files[next++];
-    const res = await fetch(byName.get(f.name).url, { method: 'PUT', body: attachmentBytes(f.attachment), headers: { 'content-type': f.type } });
-    if (!res.ok) fail(`Upload of ${f.name} failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
+    const res = await fetch(byName.get(f.name).url, { method: 'PUT', body: attachmentBytes(f.attachment), headers: { 'content-type': f.type, 'x-content-type': f.type } });
+    if (res.ok) continue;
+    const why = `Upload of ${f.name} failed (${res.status}): ${(await res.text()).slice(0, 200)}`;
+    if (!specNames.has(f.name)) await failAndTellHq(why);
+    lostSpecs.add(f.name);
+    console.log(`::warning::[ScoutEvidence] ${why}. HQ won't have this spec, so "Keep this flow" can't use it.`);
   }
 }
 await Promise.all([worker(), worker(), worker(), worker()]);
+const sentSpecs = specs.filter((s) => !lostSpecs.has(s.name));
 
 const summaryPath = `${out}/summary.md`;
 const manifest = {
@@ -256,7 +268,7 @@ const manifest = {
   // What this run was asked to do beyond the diff, so the viewer can show it next to the flows.
   ...(process.env.SCOUT_PLAN ? { plan: String(process.env.SCOUT_PLAN).slice(0, 2000) } : {}),
   ...(process.env.SCOUT_AREAS ? { areas: String(process.env.SCOUT_AREAS).split(',').filter(Boolean).slice(0, 20) } : {}),
-  specs: specs.map((s) => ({ path: s.path, pathname: byName.get(s.name).pathname })),
+  specs: sentSpecs.map((s) => ({ path: s.path, pathname: byName.get(s.name).pathname })),
   tests: manifestTests.map((t) => ({
     ...t,
     shots: t.shots.map((s) => ({ name: s.name, pathname: byName.get(s.file).pathname })),
@@ -264,9 +276,9 @@ const manifest = {
   })),
 };
 const manRes = await fetch(`${hq}/api/evidence/manifest`, { method: 'POST', headers: auth, body: JSON.stringify(manifest) });
-if (!manRes.ok) fail(`HQ refused the manifest (${manRes.status}): ${(await manRes.text()).slice(0, 300)}`);
+if (!manRes.ok) await failAndTellHq(`HQ refused the manifest (${manRes.status}): ${(await manRes.text()).slice(0, 300)}`);
 const { mission } = await manRes.json();
 
 const link = regression && !smokeMission ? `${hq}/#health` : `${hq}/#evidence=${encodeURIComponent(mission)}`;
-console.log(`[ScoutEvidence] Sent ${files.length} files for ${tests.length} flows${specs.length ? ` and ${specs.length} spec file${specs.length === 1 ? '' : 's'}` : ''}${only.length ? ` (re-ran ${only.length}; HQ keeps the rest from the previous run)` : ''}: ${link}`);
+console.log(`[ScoutEvidence] Sent ${files.length} files for ${tests.length} flows${sentSpecs.length ? ` and ${sentSpecs.length} spec file${sentSpecs.length === 1 ? '' : 's'}` : ''}${only.length ? ` (re-ran ${only.length}; HQ keeps the rest from the previous run)` : ''}: ${link}`);
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `url=${link}\n`);
