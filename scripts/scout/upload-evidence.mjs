@@ -48,15 +48,18 @@ async function githubIdToken() {
 const idToken = process.env.SCOUT_HQ_TOKEN || (await githubIdToken());
 const auth = { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' };
 
-const tests = loadTests(out);
-if (!tests?.length) {
-  // Nothing ran (the app or Playwright failed first). Tell HQ so the mission doesn't sit in "testing".
+/** Fails the step, first telling HQ the run broke so the mission doesn't sit in "testing" with no result. */
+async function failAndTellHq(message) {
   if (!regression || smokeMission) {
     const body = { pr, ...(smokeMission ? { missionId: smokeMission } : {}), sha: HEAD_SHA, runUrl: RUN_URL, state: 'error' };
     await fetch(`${hq}/api/agents/qa`, { method: 'POST', headers: auth, body: JSON.stringify(body) }).catch(() => {});
   }
-  fail('No Playwright results to send');
+  fail(message);
 }
+
+const tests = loadTests(out);
+// Nothing ran (the app or Playwright failed first).
+if (!tests?.length) await failAndTellHq('No Playwright results to send');
 
 // Type errors in the PR's own files (the workflow's "Check the build" step): the flows were skipped.
 const buildErrorsPath = `${out}/build-errors.txt`;
@@ -219,7 +222,7 @@ const urlRes = await fetch(`${hq}/api/evidence/upload-urls`, {
   headers: auth,
   body: JSON.stringify({ repo, pr, files: files.map((f) => f.name) }),
 });
-if (!urlRes.ok) fail(`HQ refused upload URLs (${urlRes.status}): ${(await urlRes.text()).slice(0, 300)}`);
+if (!urlRes.ok) await failAndTellHq(`HQ refused upload URLs (${urlRes.status}): ${(await urlRes.text()).slice(0, 300)}`);
 const { urls } = await urlRes.json();
 const byName = new Map(urls.map((u) => [u.name, u]));
 
@@ -235,7 +238,7 @@ async function worker() {
     const res = await fetch(byName.get(f.name).url, { method: 'PUT', body: attachmentBytes(f.attachment), headers: { 'content-type': f.type, 'x-content-type': f.type } });
     if (res.ok) continue;
     const why = `Upload of ${f.name} failed (${res.status}): ${(await res.text()).slice(0, 200)}`;
-    if (!specNames.has(f.name)) fail(why);
+    if (!specNames.has(f.name)) await failAndTellHq(why);
     lostSpecs.add(f.name);
     console.log(`::warning::[ScoutEvidence] ${why}. HQ won't have this spec, so "Keep this flow" can't use it.`);
   }
@@ -273,7 +276,7 @@ const manifest = {
   })),
 };
 const manRes = await fetch(`${hq}/api/evidence/manifest`, { method: 'POST', headers: auth, body: JSON.stringify(manifest) });
-if (!manRes.ok) fail(`HQ refused the manifest (${manRes.status}): ${(await manRes.text()).slice(0, 300)}`);
+if (!manRes.ok) await failAndTellHq(`HQ refused the manifest (${manRes.status}): ${(await manRes.text()).slice(0, 300)}`);
 const { mission } = await manRes.json();
 
 const link = regression && !smokeMission ? `${hq}/#health` : `${hq}/#evidence=${encodeURIComponent(mission)}`;
