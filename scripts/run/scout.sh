@@ -125,6 +125,11 @@ if [ "$REPORTS_TO_HQ" = true ]; then node "$HQ_MJS" qa running || warn "Couldn't
 
 # ---- The toolchain: dependencies, Java for the emulators, Playwright's Chromium (all cached in HQ's image)
 install_deps
+# A branch from before the repo had @playwright/test (or a repo without it) still gets Scout's runner.
+if [ ! -d node_modules/@playwright/test ]; then
+  say "Adding @playwright/test (this branch's package.json has none)"
+  npm i --no-save --no-audit --no-fund @playwright/test@latest >/dev/null
+fi
 if ! command -v java >/dev/null 2>&1; then
   say "Installing Java for the Firebase emulators"
   sudo apt-get update -qq >/dev/null 2>&1 || true
