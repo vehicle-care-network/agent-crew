@@ -54,6 +54,34 @@ one, build the one the mock marks as recommended or lists first, say so in the P
 6. Write `agent-out/pr.json`: `{ "title": "<imperative, under 70 chars>", "summary": "<markdown: what
    changed and why, how to try it, anything risky>" }`.
 
+## Mode `check`: write a test for how it works today
+
+Step 1 of a new test, written in HQ's Tests tab. `$BOLT_TASK` describes a behaviour in words (what goes
+in, what should come out), and `$BOLT_LEVEL` says `unit` or `integration`. Nothing is saved until Kayvan
+marks what you found, so you commit nothing: you write the test, run it against the code as it is, and
+report whether the app does that today. Scout does the same in a browser; you do it at the code.
+
+1. **Find the code** the description is about, and where its tests live (`{{paths.tests}}`, and the
+   patterns next to it). A unit test calls the function or module directly. An integration test goes
+   through the layer above (a route handler, a service with its real collaborators on the emulators), the
+   way this repo's integration tests already do.
+2. **Write one test file** (two at most) asserting exactly what the description says, in the style of the
+   neighbouring tests. Assert the described behaviour, not the current one: if the code does something
+   else, the test fails, and that failure is the finding.
+3. **Run your files only**, with `{{commands.test}}` narrowed to them the way this repo's runner allows.
+   Fix the test when the mistake is yours. Never change application code, and never loosen an assertion
+   to make it pass.
+4. **Write `agent-out/check.json`**:
+   `{ "read": "expected" | "wrong" | "cant-tell", "why": "<one or two sentences>", "files": ["<path>", …], "passed": n, "failed": n }`
+   - `expected`: your tests pass, so the app does what was described.
+   - `wrong`: a test you are confident in fails. Say which assertion, and what the code does instead.
+   - `cant-tell`: no test you could write would settle it. The description names no code you can find,
+     needs a service with no seam here, or is ambiguous. Say what would settle it (a clearer description,
+     a seam, a fixture). A can't-tell is not a bug.
+   `files` lists only the paths you created or changed. HQ keeps them, and if Kayvan marks the behaviour
+   expected it opens a pull request with them as they are, so leave them ready to commit: formatted, lint
+   clean, typed. Don't write `agent-out/pr.json` in this mode.
+
 ## This repo
 
 {{notes:BOLT}}

@@ -65,6 +65,21 @@ if (!tests?.length) await failAndTellHq('No Playwright results to send');
 const buildErrorsPath = `${out}/build-errors.txt`;
 const buildErrors = existsSync(buildErrorsPath) ? readFileSync(buildErrorsPath, 'utf8').split('\n').filter(Boolean).length : 0;
 
+// A check (SCOUT_CHECK, step 1 of a new test): Scout's own read of how the app works today, beside the
+// flows' pass/fail (PROMPT.md, "A check"). Missing or malformed, HQ reads it off the flows as before.
+const READS = new Set(['expected', 'wrong', 'cant-tell']);
+const checkPath = `${out}/check.json`;
+let check = null;
+if (process.env.SCOUT_CHECK && existsSync(checkPath)) {
+  try {
+    const c = JSON.parse(readFileSync(checkPath, 'utf8'));
+    if (c && READS.has(c.read)) check = { read: c.read, why: String(c.why ?? '').slice(0, 600), ...(c.step ? { step: String(c.step).slice(0, 200) } : {}) };
+    else console.error('[ScoutEvidence] check.json has no read of expected, wrong or cant-tell; HQ reads the flows instead');
+  } catch {
+    console.error('[ScoutEvidence] check.json is not valid JSON; HQ reads the flows instead');
+  }
+}
+
 const slug = (s) =>
   s
     .toLowerCase()
@@ -265,6 +280,7 @@ const manifest = {
   tier: process.env.SCOUT_TIER || '',
   ...(only.length ? { only } : {}),
   ...(coverage ? { coverage: true } : {}),
+  ...(check ? { check } : {}),
   // What this run was asked to do beyond the diff, so the viewer can show it next to the flows.
   ...(process.env.SCOUT_PLAN ? { plan: String(process.env.SCOUT_PLAN).slice(0, 2000) } : {}),
   ...(process.env.SCOUT_AREAS ? { areas: String(process.env.SCOUT_AREAS).split(',').filter(Boolean).slice(0, 20) } : {}),
