@@ -223,16 +223,25 @@ if (!urlRes.ok) fail(`HQ refused upload URLs (${urlRes.status}): ${(await urlRes
 const { urls } = await urlRes.json();
 const byName = new Map(urls.map((u) => [u.name, u]));
 
-// Upload a few at a time; videos are the large ones.
+// Upload a few at a time; videos are the large ones. Vercel Blob reads the type from `x-content-type`;
+// without it Blob guesses from the extension, and a `.ts` spec is guessed as video/mp2t and refused.
+// A spec that still fails to upload is left out of the manifest: losing it must not lose Scout's verdict.
 let next = 0;
+const specNames = new Set(specs.map((s) => s.name));
+const lostSpecs = new Set();
 async function worker() {
   while (next < files.length) {
     const f = files[next++];
-    const res = await fetch(byName.get(f.name).url, { method: 'PUT', body: attachmentBytes(f.attachment), headers: { 'content-type': f.type } });
-    if (!res.ok) fail(`Upload of ${f.name} failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
+    const res = await fetch(byName.get(f.name).url, { method: 'PUT', body: attachmentBytes(f.attachment), headers: { 'content-type': f.type, 'x-content-type': f.type } });
+    if (res.ok) continue;
+    const why = `Upload of ${f.name} failed (${res.status}): ${(await res.text()).slice(0, 200)}`;
+    if (!specNames.has(f.name)) fail(why);
+    lostSpecs.add(f.name);
+    console.log(`::warning::[ScoutEvidence] ${why}. HQ won't have this spec, so "Keep this flow" can't use it.`);
   }
 }
 await Promise.all([worker(), worker(), worker(), worker()]);
+const sentSpecs = specs.filter((s) => !lostSpecs.has(s.name));
 
 const summaryPath = `${out}/summary.md`;
 const manifest = {
@@ -256,7 +265,7 @@ const manifest = {
   // What this run was asked to do beyond the diff, so the viewer can show it next to the flows.
   ...(process.env.SCOUT_PLAN ? { plan: String(process.env.SCOUT_PLAN).slice(0, 2000) } : {}),
   ...(process.env.SCOUT_AREAS ? { areas: String(process.env.SCOUT_AREAS).split(',').filter(Boolean).slice(0, 20) } : {}),
-  specs: specs.map((s) => ({ path: s.path, pathname: byName.get(s.name).pathname })),
+  specs: sentSpecs.map((s) => ({ path: s.path, pathname: byName.get(s.name).pathname })),
   tests: manifestTests.map((t) => ({
     ...t,
     shots: t.shots.map((s) => ({ name: s.name, pathname: byName.get(s.file).pathname })),
@@ -268,5 +277,5 @@ if (!manRes.ok) fail(`HQ refused the manifest (${manRes.status}): ${(await manRe
 const { mission } = await manRes.json();
 
 const link = regression && !smokeMission ? `${hq}/#health` : `${hq}/#evidence=${encodeURIComponent(mission)}`;
-console.log(`[ScoutEvidence] Sent ${files.length} files for ${tests.length} flows${specs.length ? ` and ${specs.length} spec file${specs.length === 1 ? '' : 's'}` : ''}${only.length ? ` (re-ran ${only.length}; HQ keeps the rest from the previous run)` : ''}: ${link}`);
+console.log(`[ScoutEvidence] Sent ${files.length} files for ${tests.length} flows${sentSpecs.length ? ` and ${sentSpecs.length} spec file${sentSpecs.length === 1 ? '' : 's'}` : ''}${only.length ? ` (re-ran ${only.length}; HQ keeps the rest from the previous run)` : ''}: ${link}`);
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `url=${link}\n`);
