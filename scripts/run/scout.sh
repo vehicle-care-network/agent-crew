@@ -21,8 +21,12 @@ FOCUS=$(param focus)
 SCOUT_ONLY=$(param only | head -10)
 SCOUT_ADJUST=$(param adjust | head -c 2000)
 SCOUT_PLAN=$(param plan | head -c 2000)
+# A check (step 1 of a new test in HQ): a smoke run whose point is Scout's read of how the app works today,
+# written to scout-out/check.json beside the flows' pass/fail (PROMPT.md, "A check").
+SCOUT_CHECK=$(param check); case "$SCOUT_CHECK" in 1|true|yes) SCOUT_CHECK=1 ;; *) SCOUT_CHECK="" ;; esac
+[ "$SCOUT_MODE" = smoke ] || SCOUT_CHECK=""
 SCOUT_OUT=scout-out
-export SCOUT_MODE SCENARIO_ID SCOUT_ONLY SCOUT_ADJUST SCOUT_PLAN SCOUT_OUT
+export SCOUT_MODE SCENARIO_ID SCOUT_ONLY SCOUT_ADJUST SCOUT_PLAN SCOUT_CHECK SCOUT_OUT
 mkdir -p "$SCOUT_OUT"
 default_head() { local b; b=$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch); gh api "repos/$GITHUB_REPOSITORY/commits/$b" --jq .sha; }
 if [ "$SCOUT_MODE" = smoke ] || [ "$SCOUT_MODE" = regression ] || [ "$SCOUT_MODE" = coverage ]; then
@@ -39,7 +43,7 @@ export PR_NUMBER="$NUMBER" HEAD_SHA="$SHA"
 # Reports to HQ: a PR, a smoke test, or a release's regression run (a mission); main's health otherwise.
 REPORTS_TO_HQ=false
 if [ "$SCOUT_MODE" = pr ] || [ "$SCOUT_MODE" = smoke ] || { [ "$SCOUT_MODE" = regression ] && [ -n "$MISSION_ID" ]; }; then REPORTS_TO_HQ=true; fi
-say "Mode $SCOUT_MODE, PR #$NUMBER at ${SHA:0:7}, focus: ${FOCUS:-(none)}${SCOUT_ONLY:+, only: $(tr '\n' ';' <<<"$SCOUT_ONLY")}"
+say "Mode $SCOUT_MODE${SCOUT_CHECK:+ (a check)}, PR #$NUMBER at ${SHA:0:7}, focus: ${FOCUS:-(none)}${SCOUT_ONLY:+, only: $(tr '\n' ';' <<<"$SCOUT_ONLY")}"
 
 # Whatever stops this run before its evidence is sent, HQ hears that Scout broke, and the app is stopped.
 EVIDENCE_SENT=""
@@ -108,6 +112,7 @@ elif [ "$SCOUT_MODE" = coverage ]; then
   TIER=regression; AGENT_RUNS=true; TURNS=150; BUDGET="a committed spec for every core flow that has none, written under e2e/scout/core/"
 elif [ "$SCOUT_MODE" = smoke ]; then
   TIER=smoke; AGENT_RUNS=true; TURNS=60; BUDGET="the smoke-test scenario in SCOUT_FOCUS, and nothing else"
+  [ -z "$SCOUT_CHECK" ] || BUDGET="the scenario in SCOUT_FOCUS, walked once as a check of how it works today, and nothing else"
 else
   TIER=$(impact_tier); AGENT_RUNS=true
   case "$TIER" in
@@ -183,6 +188,7 @@ SCOUT_MODE: $SCOUT_MODE
 PR_NUMBER: $NUMBER
 SCOUT_BASE_URL: $SCOUT_BASE_URL
 SCOUT_FOCUS: ${FOCUS:-(none)}
+CHECK: $( [ -n "$SCOUT_CHECK" ] && echo 'yes: write your read of how it works today to scout-out/check.json' || echo no)
 TEST PLAN: ${SCOUT_PLAN:-(none)}
 AREAS: ${SCOUT_AREAS:-(none matched)}
 GUIDANCE FILE: $( [ -n "$SCOUT_AREAS" ] && echo scout-out/guidance.md || echo '(none)')

@@ -163,6 +163,31 @@ again and again (daily, after each production deploy, by hand), so the spec you 
    result goes to the HQ mission for this run; a failure wakes Kayvan up, so don't report a test mistake
    as a bug.
 
+### A check: how it works today (`CHECK: yes`)
+
+The scenario is step 1 of a new test. Kayvan wrote what a user does and what they expect to see, and
+wants to know whether the app does that today, before anything is saved. Run it as a smoke test (the
+spec in `e2e/scout/smoke/`, an `evidence()` screenshot at each step), then say what you saw in
+`scout-out/check.json`:
+
+```json
+{ "read": "expected", "why": "<one or two sentences>", "step": "<the step it turned on, in the scenario's words>" }
+```
+
+`read` is one of three words, and nothing else:
+
+- `expected`: you reached every step, and the app did what the scenario says.
+- `wrong`: you reached a step and the app did something else. Say which step and what it did instead:
+  that is what Kayvan marks as a known bug.
+- `cant-tell`: you could not get to the point where it would show. The scenario names a page or
+  control that doesn't exist, a step is ambiguous, the data it needs couldn't be seeded, an integration
+  has no key here. Say what stopped you and what would let you tell (a seed, a clearer step, an
+  account). A can't-tell is not a bug: leave it out of `bugs.json`, and don't guess `wrong` when you
+  aren't sure.
+
+HQ shows your read beside the screenshots. Without `check.json`, HQ reads the flows alone: passed is
+`expected`, failed is `wrong`, so a flow that failed for your own reasons reads as a bug. Write it.
+
 ## Mode `regression`: the latest main, every core flow
 
 There is no PR. The latest `main` is checked out, and the goal is to catch what broke since the last run.

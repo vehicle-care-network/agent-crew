@@ -32,7 +32,13 @@ run has no agent and runs the committed core and kept flows as they are. `covera
 specs that core flows still lack (see Three tiers of testing).
 `smoke` runs one scenario HQ hands it (a smoke test saved in HQ, on its schedule: about every 24 hours,
 after each production deploy, or by hand) on main or on the deployed commit, reusing the spec it wrote
-last time; the result goes to the HQ mission that started it, never to a PR.
+last time; the result goes to the HQ mission that started it, never to a PR. A smoke run with `check`
+set is step 1 of a new test in HQ's Tests tab: Scout walks the scenario once and writes its own read of
+how the app works today to `scout-out/check.json` (`expected`, `wrong`, or `cant-tell` when it couldn't
+reach the point that would show), which goes to HQ with the evidence; a person marks it from there. Bolt
+has the same step at the code: in mode `check` (`level` is `unit` or `integration`) it writes the test for
+the described behaviour, runs it against the code as it is, and reports its read with the files, committing
+nothing (`briefs/BOLT.md`, "Mode check").
 
 In any mode, `only` (flow titles, one per line, from HQ's "Re-run this flow") makes Scout re-run those
 flows alone from the specs it kept, work out why each failed last time, and report just those; HQ folds
