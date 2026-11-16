@@ -167,6 +167,14 @@ if [ "$SCOUT_MODE" = pr ] && ! dry_run; then
   say "Specs from the previous run: $(tail -1 "$SCOUT_OUT/specs-pull.txt") ($( [ "$REUSED" = true ] && echo reused || echo none))"
 fi
 
+# Another PR's flows that were committed with it (pr-<n>-* specs, helpers and seeds, Scout's scratch names)
+# run on no PR but their own: their seed never runs here, and one spec that can't load ends the whole
+# Playwright run with no results. Outside a PR (NUMBER is 0) none of them run.
+for f in e2e/scout/pr-* e2e/scout/_seed/pr-*; do
+  [ -e "$f" ] || continue
+  case "$(basename "$f")" in "pr-$NUMBER-"*) ;; *) say "Leaving out $f (another PR's flow)"; rm -rf "$f" ;; esac
+done
+
 # ---- Start the app on emulators. The app under test never sees the run's credentials.
 env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
   bash .crew/scripts/scout/start-env.sh
@@ -174,7 +182,11 @@ env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u GH_TOKEN -u GITHUB_TOKEN 
 (
   set -a; . ./.env.local; set +a
   for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do [ -f "$f" ] && { say "Seeding $f"; node "$f"; }; done
-  if [ "$REUSED" = true ]; then for f in e2e/scout/_seed/*.mjs; do [ -f "$f" ] && node "$f"; done; fi
+  # This PR's own seeds run whether its specs came back from HQ or were committed on its branch.
+  for f in e2e/scout/_seed/*.mjs; do
+    [ -f "$f" ] || continue
+    case "$(basename "$f")" in "pr-$NUMBER-"*) node "$f" ;; *) [ "$REUSED" != true ] || node "$f" ;; esac
+  done
   true
 )
 
