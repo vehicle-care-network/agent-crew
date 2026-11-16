@@ -258,15 +258,17 @@ run of every agent in every repo.
 
 ## Releasing the crew
 
-Every change lands on `main` by PR. To release, move the major tag:
+Every change lands on `main` by PR. To release, bump `VERSION` in a PR (with the change, or on its own
+to release what has landed since the last one). When it reaches `main`, the release workflow
+(`.github/workflows/release.yml`) tags that commit `v<VERSION>` and moves the major tag (`v1`) to it.
 
-```bash
-git tag -f v1 && git push -f origin v1
-```
+Callers pin `@v1` and HQ's sandboxes run the crew at `v1` (the crew ref in Setup, Runners), so a release
+reaches every repo at its next run. The version tags (`v1.9.1`) never move: to go back, set HQ's crew ref
+to the earlier one. A merge that leaves `VERSION` alone releases nothing. For a breaking change (a new
+required field in `crew.json`, a renamed input), bump the major version, move callers over repo by repo,
+and keep `v1` until the last one has moved. The setup step prints `VERSION`.
 
-Callers pin `@v1`, so a release reaches every repo at its next run. For a breaking change (a new required
-field in `crew.json`, a renamed input), tag `v2`, move callers over repo by repo, and keep `v1` until the
-last one has moved. `VERSION` is informational and printed by the setup step.
+By hand, if it is ever needed: `git tag -f v1 && git push -f origin v1`.
 
 ## Trying a change before releasing
 

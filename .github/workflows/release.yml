@@ -1,0 +1,50 @@
+name: Release the crew
+
+# A change to VERSION landing on main is a release: the commit gets its own tag (v1.9.1, never moved again)
+# and the major tag callers pin (v1) moves to it. HQ's sandboxes and every repo's `uses: …@v1` take it at
+# their next run. To go back, set HQ's crew ref (Setup, Runners) to an earlier version's tag.
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  # By hand, for main as it stands: tags it as VERSION says, or fails if that version is already another commit.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Tag this commit and move the major tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Releases are cut from main, not $GITHUB_REF"; exit 1; }
+          version=$(gh api "repos/$REPO/contents/VERSION?ref=$SHA" -H 'Accept: application/vnd.github.raw' | tr -d '[:space:]')
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::VERSION is '$version', expected something like 1.9.1"; exit 1; }
+          tag="v$version"; major="v${version%%.*}"
+          at() { gh api "repos/$REPO/git/ref/tags/$1" --jq .object.sha 2>/dev/null | grep -E '^[0-9a-f]{40}$' || true; }
+
+          # The version's own tag never moves: a second commit claiming the same version is a mistake.
+          existing=$(at "$tag")
+          if [ -z "$existing" ]; then
+            gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
+            echo "[Release] Tagged $tag at ${SHA:0:7}"
+          elif [ "$existing" != "$SHA" ]; then
+            echo "::error::$tag already names ${existing:0:7}; bump VERSION to release ${SHA:0:7}"; exit 1
+          fi
+
+          if [ -z "$(at "$major")" ]; then
+            gh api "repos/$REPO/git/refs" -f ref="refs/tags/$major" -f sha="$SHA" >/dev/null
+          else
+            gh api -X PATCH "repos/$REPO/git/refs/tags/$major" -f sha="$SHA" -F force=true >/dev/null
+          fi
+          echo "[Release] $major now at ${SHA:0:7} ($tag)"
+          echo "Released **$tag** (\`${SHA:0:7}\`); \`$major\` moved to it." >> "$GITHUB_STEP_SUMMARY"
