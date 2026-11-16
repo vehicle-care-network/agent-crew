@@ -330,6 +330,18 @@ jobs:
             echo "reused=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Another PR's flows that were committed with it (pr-<n>-* specs, helpers and seeds, Scout's scratch
+      # names) run on no PR but their own: their seed never runs here, and one spec that can't load ends the
+      # whole Playwright run with no results. Outside a PR (the number is 0) none of them run.
+      - name: Leave out other PRs' flows
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          for f in e2e/scout/pr-* e2e/scout/_seed/pr-*; do
+            [ -e "$f" ] || continue
+            case "$(basename "$f")" in "pr-$PR_NUMBER-"*) ;; *) echo "[Scout] Leaving out $f (another PR's flow)"; rm -rf "$f" ;; esac
+          done
+
       - name: Start the app on emulators
         run: bash .crew/scripts/scout/start-env.sh
 
@@ -340,12 +352,18 @@ jobs:
           for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do [ -f "$f" ] && { echo "[Scout] Seeding $f"; node "$f"; }; done
           true
 
-      # Specs reused from the previous run need the data their seed scripts create.
-      - name: Load seeds from the previous run
-        if: steps.reuse.outputs.reused == 'true'
+      # Specs reused from the previous run need the data their seed scripts create, and so do this PR's own
+      # when they were committed on its branch.
+      - name: Load this PR's seeds
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REUSED: ${{ steps.reuse.outputs.reused }}
         run: |
           set -a; . ./.env.local; set +a
-          for f in e2e/scout/_seed/*.mjs; do [ -f "$f" ] && node "$f"; done
+          for f in e2e/scout/_seed/*.mjs; do
+            [ -f "$f" ] || continue
+            case "$(basename "$f")" in "pr-$PR_NUMBER-"*) node "$f" ;; *) [ "$REUSED" != true ] || node "$f" ;; esac
+          done
 
       - name: Pick the model (set in Agent HQ)
         id: model
