@@ -15,6 +15,10 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   at `v1` into `.crew/` and renders them with the repo's `crew.json`, so the agents behave as they do on
   GitHub; the briefs and the HQ-driven runs are unchanged. Scout and Rocket are not part of it.
   `scripts/setup/check.mjs` checks the installed skill.
+- **Setup asks where the agents run.** `SETUP.md` starts with the choice between GitHub Actions, Vercel
+  sandboxes started by an Agent HQ, and your own machine (the `/crew` skill only), and has the steps for
+  each. `scripts/setup/check.mjs --sandbox` and `--local` check those setups: no caller workflows, no
+  Claude secret and no `AGENT_HQ_URL` are expected there, and `--local` requires the skill.
 - **`AGENT_HQ_URL` no longer has a default.** Before releasing this, a repo that reports to an HQ must set
   the variable (repo or organization): `gh variable set AGENT_HQ_URL --body https://your-hq.example`.
 - The HQ App's name and commit identity are variables (`AGENT_HQ_BOT`, `AGENT_HQ_BOT_EMAIL`); the defaults

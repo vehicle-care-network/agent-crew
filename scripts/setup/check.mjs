@@ -4,6 +4,10 @@
  *
  *   node /path/to/agent-crew/scripts/setup/check.mjs            the files in this checkout
  *   node /path/to/agent-crew/scripts/setup/check.mjs --github   also the repo's secrets, labels and variables (needs `gh`)
+ *   node /path/to/agent-crew/scripts/setup/check.mjs --sandbox  for a repo whose agents run in Vercel sandboxes an Agent HQ starts:
+ *                                                               no caller workflows and no Claude secret are expected here
+ *   node /path/to/agent-crew/scripts/setup/check.mjs --local    for a repo where the crew only runs on your machine (the /crew skill
+ *                                                               in Claude Code): no caller workflows, and the skill must be installed
  *
  * It reads only; it changes nothing. Each line is ✓ (fine), ! (works, but read it) or ✗ (a run would fail).
  * Exits 1 when anything is ✗. SETUP.md in the crew repo says how to fix each one.
@@ -13,6 +17,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { CONFIG, REQUIRED, lookupIn } from './required.mjs';
 
 const github = process.argv.includes('--github');
+/** The agents run in sandboxes Agent HQ starts, not on GitHub Actions: HQ holds the triggers and the Claude credential. */
+const sandbox = process.argv.includes('--sandbox');
+/** The crew runs only on a person's machine, through the /crew skill: nothing on GitHub Actions, no HQ. */
+const local = process.argv.includes('--local');
+if (sandbox && local) {
+  console.error('Pick one of --sandbox and --local.');
+  process.exit(2);
+}
 const WORKFLOWS = '.github/workflows';
 /** The callers, by what they need. `hq` ones do nothing without Agent HQ. */
 const CALLERS = {
@@ -88,10 +100,20 @@ for (const name of existsSync('.github/agents') ? readdirSync('.github/agents').
 }
 
 // --- The callers ----------------------------------------------------------------------------------
-section('The workflows that call the crew (.github/workflows/)');
+section(sandbox ? 'Where the agents run: Vercel sandboxes, started by Agent HQ' : local ? 'Where the agents run: on your machine, when you type /crew' : 'The workflows that call the crew (.github/workflows/)');
 const present = Object.keys(CALLERS).filter((name) => existsSync(`${WORKFLOWS}/${name}`));
-if (!present.length) bad('No caller workflows: copy templates/base/.github/workflows/ from the crew');
 const has = (kind) => present.some((name) => CALLERS[name] === kind);
+if (sandbox) {
+  // HQ starts what the callers would have (Iris and Radar on a PR, Scout on the label): a caller left here runs the agent a second time, on Actions.
+  const doubled = present.filter((name) => CALLERS[name] !== 'probe');
+  if (doubled.length) warn(`${doubled.join(', ')}: HQ starts these agents itself for a repo on sandboxes, so each would also run on GitHub Actions. Delete them`);
+  else ok('No caller workflows for the agents: HQ starts each run in a sandbox');
+} else if (local) {
+  if (present.length) warn(`${present.join(', ')} ${present.length > 1 ? 'are' : 'is'} here, so the crew also runs on GitHub Actions: run this without --local to check that setup too`);
+  else ok('No caller workflows: nothing runs on GitHub Actions, and a pull request is reviewed only when someone runs /crew');
+} else if (!present.length) {
+  bad('No caller workflows: copy templates/base/.github/workflows/ from the crew (or run this with --sandbox when an Agent HQ runs the agents in Vercel sandboxes, or --local when the crew only runs on your machine)');
+}
 // This repo's owner, from its origin remote: `secrets: inherit` only reaches a crew in the same organization.
 const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }).stdout ?? '';
 const owner = /github\.com[:/]([\w.-]+)\//.exec(origin)?.[1]?.toLowerCase() ?? '';
@@ -111,10 +133,12 @@ for (const name of present) {
 if (inherits.length) {
   bad(`${inherits.join(', ')}: \`secrets: inherit\` passes nothing to a crew in another organization, so every agent would fail at sign-in. Pass CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY by name (see the templates)`);
 }
-if (has('hq') && !github) warn('Bolt, Nova, Patch and Rocket only run for an Agent HQ mission: without an HQ (variable AGENT_HQ_URL) their workflows sit idle');
+if (has('hq') && !github && !sandbox && !local) warn('Bolt, Nova, Patch and Rocket only run for an Agent HQ mission: without an HQ (variable AGENT_HQ_URL) their workflows sit idle');
 
 // --- Scout ----------------------------------------------------------------------------------------
-if (has('scout')) {
+// On sandboxes there is no scout-qa.yml to go by: Scout is set up when its files are here.
+const scout = has('scout') || (sandbox && (existsSync('.github/scout') || existsSync('e2e/scout')));
+if (scout) {
   section('Scout (browser tests on a Next.js app with Firebase emulators)');
   const pkg = existsSync('package.json') ? json('package.json') : null;
   const deps = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
@@ -154,6 +178,10 @@ if (has('probe')) {
 
 // --- The local skill -------------------------------------------------------------------------------
 const SKILL = '.claude/skills/crew';
+if (local && !existsSync(SKILL)) {
+  section('The /crew skill (Nova, Bolt, Iris and Patch on your machine, in Claude Code)');
+  bad(`${SKILL}/ is missing, and it is the only way the crew runs here: copy templates/local/ from the crew`);
+}
 if (existsSync(SKILL)) {
   section('The /crew skill (Nova, Bolt, Iris and Patch on your machine, in Claude Code)');
   if (!existsSync(`${SKILL}/SKILL.md`)) {
@@ -187,10 +215,12 @@ if (github) {
   } else {
     const secrets = gh('api', `repos/${repo}/actions/secrets`, '--jq', '.secrets[].name');
     const orgSecrets = gh('api', `repos/${repo}/actions/organization-secrets`, '--jq', '.secrets[].name') ?? '';
-    if (secrets === null) warn(`Couldn't list ${repo}'s secrets (needs admin on the repo): check CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set`);
+    if (sandbox) ok('No Claude secret needed on the repo: a sandbox run uses the credential your Agent HQ holds');
+    else if (local) ok('No Claude secret needed on the repo: the /crew skill uses your Claude Code sign-in');
+    else if (secrets === null) warn(`Couldn't list ${repo}'s secrets (needs admin on the repo): check CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set`);
     else if (/^(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY)$/m.test(`${secrets}\n${orgSecrets}`)) ok('A Claude credential is set (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)');
     else bad('No Claude credential: run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN` (or set ANTHROPIC_API_KEY)');
-    if (has('scout')) {
+    if (scout) {
       const labels = gh('api', '--paginate', `repos/${repo}/labels?per_page=100`, '--jq', '.[].name') ?? '';
       if (/^scout$/m.test(labels)) ok('The `scout` label exists');
       else bad('No `scout` label: gh label create scout --description "Scout tests this PR on every push" --color 5319e7');
@@ -198,15 +228,23 @@ if (github) {
     const variables = gh('api', `repos/${repo}/actions/variables`, '--jq', '.variables[].name') ?? '';
     const orgVariables = gh('api', `repos/${repo}/actions/organization-variables`, '--jq', '.variables[].name') ?? '';
     const hqSet = /^AGENT_HQ_URL$/m.test(`${variables}\n${orgVariables}`);
-    if (hqSet) ok('AGENT_HQ_URL is set: runs report to your Agent HQ');
+    if (sandbox) ok('No AGENT_HQ_URL needed: HQ gives each sandbox run its own address');
+    else if (local) ok('No AGENT_HQ_URL needed: the /crew skill works without an Agent HQ');
+    else if (hqSet) ok('AGENT_HQ_URL is set: runs report to your Agent HQ');
     else if (has('hq')) bad('AGENT_HQ_URL is not set, and this repo has the HQ agents\' workflows: gh variable set AGENT_HQ_URL --body https://your-hq.example');
     else ok('No AGENT_HQ_URL: the crew runs on its own and reports on the PR');
   }
 }
 
+if (sandbox) {
+  console.log('\nIn your Agent HQ (this script can\'t see it):');
+  console.log('  · its GitHub App is installed on this repo');
+  console.log('  · the repo is on HQ\'s list of repos, and set to "Vercel sandboxes, every agent" under Setup → Runners');
+}
+
 console.log(
   failed
     ? `\n${failed} to fix${warned ? `, ${warned} to read` : ''}. SETUP.md in the crew repo covers each one.`
-    : `\nReady${warned ? `, with ${warned} to read` : ''}.${github ? '' : ' Run again with --github to check the secrets and labels too.'}`,
+    : `\nReady${warned ? `, with ${warned} to read` : ''}.${github || local ? '' : ' Run again with --github to check the secrets and labels too.'}`,
 );
 process.exit(failed ? 1 : 0);

@@ -29,8 +29,18 @@ No agent can merge. Reviews are comments, and landing a PR stays with a person.
 
 > Read https://raw.githubusercontent.com/vehicle-care-network/agent-crew/main/SETUP.md and set up the agent crew in this repo.
 
-Claude copies the starter files, fills them in from your code, runs the check script and opens a pull
-request. You add one secret (your Claude credential) and merge.
+Claude asks where the agents should run, copies the starter files for that choice, fills them in from
+your code, runs the check script and opens a pull request.
+
+| | ⚙️ GitHub Actions | ▲ Vercel sandboxes | 💻 Your machine |
+| --- | :---: | :---: | :---: |
+| **Cost** | 💳 Paid | 💳 Paid | 🆓 Free |
+| **Scale** | 📈 Grows with your needs | 📈 Grows with your needs | 🔒 Limited by your computer |
+| **Claude subscription or API key** | ✅ | ✅ | ✅ |
+| **Access you need** | GitHub Actions | Vercel + [Agent HQ](#agent-hq) | Claude Code |
+| **Runs by itself** | ✅ | ✅ | ❌ you type `/crew` |
+
+[SETUP.md](SETUP.md#first-where-should-the-agents-run) has the full comparison and the steps for each.
 
 **By hand.** Follow [SETUP.md](SETUP.md): it is the same steps, about ten minutes for Iris and Radar.
 
