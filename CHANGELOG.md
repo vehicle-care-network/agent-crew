@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## Unreleased
+## 1.11.0
 
 - **Fake services for Scout.** A flow that depends on a third party (Nylas, Stripe, Twilio) can be tested
   without a key: a fake is one JSON definition of the routes it answers, the variables that point the app
