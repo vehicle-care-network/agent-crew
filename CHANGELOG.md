@@ -3,6 +3,14 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.11.1
+
+- **Sandbox runs use the repo's Node** (`.nvmrc`, else `crew.json` `node`), as `setup-node` does for a
+  workflow. The sandbox image carries one Node (24 today), and its npm refused a lockfile written under
+  Node 22: `npm ci` ended every Bolt run on such a repo in seconds. `crew_render` now fetches the repo's
+  major from nodejs.org when the runner's differs (checksum verified, kept under `~/.cache/hq-node`) and
+  puts it first on `PATH` for the rest of the run.
+
 ## 1.11.0
 
 - **Fake services for Scout.** A flow that depends on a third party (Nylas, Stripe, Twilio) can be tested

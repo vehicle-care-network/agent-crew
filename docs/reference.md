@@ -239,7 +239,7 @@ HQ and no workflow.
 }
 ```
 
-- `node` is used when the repo has no `.nvmrc`. `commands` are run with `bash -c` from the repo root.
+- `node` is used when the repo has no `.nvmrc`. On GitHub Actions `setup-node` installs it; in a sandbox the run fetches that major from nodejs.org when the image's Node differs (`use_node` in `scripts/run/common.sh`). `commands` are run with `bash -c` from the repo root.
 - `paths` only feed the briefs' prose. `scout.env` values may use `${APP_PORT}`.
 - `scout.blockHosts` is applied runner-wide (`/etc/hosts`), so it must never name Agent HQ itself (Scout
   reports its verdict there, and a blocked HQ leaves the mission on "Scout is testing" for good) nor
