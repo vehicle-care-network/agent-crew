@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stops what .crew/scripts/scout/start-env.sh started and removes the files it wrote.
 OUT="${SCOUT_OUT:-scout-out}"
-for name in next-dev emulators; do
+for name in next-dev emulators fakes; do
   if [ -f "$OUT/$name.pid" ]; then
     pid=$(cat "$OUT/$name.pid")
     # start-env.sh runs each server in its own process group (set -m), so this stops npx, node and java together.

@@ -11,6 +11,9 @@
  *   node .crew/scripts/agents/hq.mjs qa running|error              # Scout: the run started / broke before results (env PR_NUMBER, HEAD_SHA, RUN_URL; MISSION_ID for a smoke test)
  *   node .crew/scripts/agents/hq.mjs model <agent>                 # prints the model chosen for the agent in HQ (empty when none; never fails)
  *   node .crew/scripts/agents/hq.mjs specs-pull                    # Scout in a sandbox: the specs HQ kept from this PR's previous run, into e2e/scout (env PR_NUMBER); prints the count
+ *   node .crew/scripts/agents/hq.mjs fakes-pull <dir>              # Scout: the repo's fake services from HQ's Fakes page, one <name>.json each; prints the count (never fails)
+ *   node .crew/scripts/agents/hq.mjs fake-post <fakeId> <file>     # Radar: the fake it drafted from the code
+ *   node .crew/scripts/agents/hq.mjs fake-fail <fakeId> "<why>"    # Radar: the draft didn't come out
  *
  * Env: AGENT_HQ_URL (your HQ's address), ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
  *
@@ -55,7 +58,7 @@ if (!hq) {
     console.log('[]');
     process.exit(0);
   }
-  if (command === 'specs-pull') {
+  if (command === 'specs-pull' || command === 'fakes-pull') {
     console.log(0);
     process.exit(0);
   }
@@ -99,6 +102,49 @@ if (command === 'model') {
   }
   console.error(`[AgentHq] Model from Agent HQ for ${agent}: ${model || 'none saved'}`);
   process.stdout.write(model);
+  process.exit(0);
+}
+if (command === 'fakes-pull') {
+  // The fakes kept for this repo in HQ (its Fakes page), for start-env.sh to run. The repo's own
+  // .github/scout/fakes/*.json are laid over them there. An HQ that can't be reached, or one from before
+  // fakes existed, means no fakes from HQ: the run goes on with the repo's own.
+  const dir = missionId || 'scout-out/fakes/hq';
+  let written = 0;
+  try {
+    const { ACTIONS_ID_TOKEN_REQUEST_URL: url, ACTIONS_ID_TOKEN_REQUEST_TOKEN: token } = process.env;
+    const oidc = await fetch(`${url}&audience=agent-hq`, { headers: { Authorization: `bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+    const res = await fetch(`${hq}/api/agents/fakes`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${(await oidc.json()).value}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'pull' }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) throw new Error(`HQ answered ${res.status}`);
+    mkdirSync(dir, { recursive: true });
+    for (const fake of (await res.json()).fakes ?? []) {
+      if (!/^[a-z][a-z0-9-]{0,39}$/.test(String(fake?.name ?? ''))) continue;
+      writeFileSync(`${dir}/${fake.name}.json`, JSON.stringify(fake, null, 2));
+      written++;
+    }
+    console.error(`[AgentHq] ${written ? `${written} fake service(s) from HQ` : 'No fake services kept in HQ for this repo'}`);
+  } catch (error) {
+    console.error(`::warning::[AgentHq] Couldn't read the fake services from HQ (${error instanceof Error ? error.message : error}); using the repo's own only`);
+  }
+  console.log(written);
+  process.exit(0);
+}
+if (command === 'fake-post' || command === 'fake-fail') {
+  const id = missionId;
+  if (!id) fail(`${command} needs the fake's id`);
+  const runUrl = process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : process.env.RUN_URL || '';
+  if (command === 'fake-post') {
+    const definition = JSON.parse(readFileSync(rest[0], 'utf8'));
+    await post('/api/agents/fakes', { action: 'draft', id, definition, runUrl });
+    console.log(`[AgentHq] Sent the ${definition.name} fake to HQ: ${definition.routes?.length ?? 0} route(s)`);
+  } else {
+    await post('/api/agents/fakes', { action: 'failed', id, error: String(rest[0] ?? '').slice(0, 400), runUrl });
+    console.log('[AgentHq] Told HQ the draft failed');
+  }
   process.exit(0);
 }
 if (command === 'ideas-known') {

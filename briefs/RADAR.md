@@ -117,7 +117,54 @@ Write two files:
 The owner picks from the findings on the mission, one by one or all at once, and turns them into Ideas (to
 prioritise later) or missions (to build now). Nothing you write here is built until they do.
 
+## Mode `fake`: a stand-in for a service the app calls
+
+Scout tests the app with no third-party keys, so a flow that needs one (a booking through Nylas, a
+payment through Stripe) can't run. A fake is a local stand-in that answers the app's calls the way the
+real service would. `$RADAR_SERVICE` names the service the owner wants one for; `$RADAR_TASK`, when set,
+is what they added (a flow they care about, something the last draft got wrong).
+
+Read `.crew/scout/FAKES.md` first: it is the definition's format, and what you write must follow it
+exactly. Then find everything the app does with the service, from the code, not from memory:
+
+1. **Where it is called.** Search for the service's package (`package.json`, imports), its hostnames, and
+   its environment variables. Follow each call site to the request it makes: method, path, what it sends,
+   and which fields of the answer the code reads afterwards. Include calls made from browser code (a
+   scheduler widget, a payment form) as well as server routes. The service's own documentation
+   (WebFetch) tells you the real shape of an answer; the code tells you which parts matter.
+2. **How the app is pointed at it.** The fake only works if the address the app calls comes from the
+   environment. For each call site, find where the base URL comes from. When it is an environment
+   variable or an SDK option fed by one, put that variable in `env` with `${URL}`. When it is a constant
+   or the SDK's default, the app needs a change first: add it to `needs`, naming the file, the line and
+   the variable to read (and, for browser code, a `NEXT_PUBLIC_` one). Never leave a call site out of
+   both.
+3. **What else the app needs to start and run the flow.** Keys, ids, secrets the code checks for: dummy
+   values in `env` (`fake-nylas-key`), never a real one, never one copied from a `.env` file.
+4. **What comes back to the app.** Webhooks, redirects after an OAuth or checkout page, callbacks: find
+   the app's routes that receive them and what they verify. Describe each as a webhook (or, for a
+   redirect, as a route answering 302). When the app checks a signature, sign it in a handler with a
+   dummy secret you also set in `env`.
+5. **The real hosts**, in `hosts`, every one the code or the SDK can reach, so they are blocked in tests.
+
+Write routes for every call you found, each with a `note` naming the file that makes it. Answers must
+hold what the code reads, with realistic values and the service's real field names. Use a template when
+the answer is the same every time; use a handler when it depends on earlier calls (create, then find,
+update, cancel) or on today's date (availability). Anything dated is relative to now, never a fixed day.
+Cover the unhappy answer the app handles too (not found, declined) when the code has a branch for it.
+
+Write the definition to `radar-out/fake.json`, then run
+`node .crew/scripts/scout/fakes.mjs check radar-out/fake.json` and fix what it reports. Try it before
+you finish: plan and serve it from a scratch folder, call each route with curl the way the app would,
+and read the answers.
+
+```bash
+mkdir -p /tmp/try/scout-out/fakes/hq && cp radar-out/fake.json /tmp/try/scout-out/fakes/hq/
+(cd /tmp/try && node "$OLDPWD/.crew/scripts/scout/fakes.mjs" plan && node "$OLDPWD/.crew/scripts/scout/fakes.mjs" serve &)
+```
+
+A service the code never calls is a definition with no routes and an `about` that says so.
+
 ## Rules
 
-Never change code, commit, push, open issues or comment. Write only under `radar-out/`. Never put
+Never change code, commit, push, open issues or comment. Write only under `radar-out/` (and `/tmp`). Never put
 secrets, tokens or customer data in an idea.

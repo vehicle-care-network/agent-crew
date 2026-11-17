@@ -7,6 +7,8 @@ name: Agent · Radar
 #     (plus security, performance and SEO), and sends at most a handful of ideas to Agent HQ's inbox;
 #   - studies a question you ask it in HQ ("run a full SEO analysis of the public pages") and reports back
 #     with a written report and a list of findings you turn into Ideas or missions;
+#   - drafts a fake service for Scout's tests from how the code calls the real one (mode `fake`, started
+#     from Agent HQ's Fakes page);
 #   - checks daily whether main is due for Scout's regression run, and starts it when it is.
 # It proposes; it never changes code.
 # Reusable: a repo's `.github/workflows/agent-radar.yml` holds the triggers and calls this.
@@ -24,7 +26,7 @@ on:
         required: false
     inputs:
       params:
-        description: 'JSON from Agent HQ: { mode: triage|audit|study, mission_id, task, scope, report_url }. Wins over the inputs below.'
+        description: 'JSON from Agent HQ: { mode: triage|audit|study|fake, mission_id, task, scope, report_url, fake_id, service }. Wins over the inputs below.'
         required: false
         type: string
         default: ''
@@ -217,6 +219,67 @@ jobs:
       - name: Tell HQ it failed
         if: failure()
         run: node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg e "The Radar study run failed. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{agent:"radar",type:"failed",error:$e}')" || true
+
+  fake:
+    if: inputs.event == 'workflow_dispatch' && fromJSON(inputs.params || '{}').mode == 'fake'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: agent-radar-fake-${{ fromJSON(inputs.params || '{}').fake_id }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FAKE_ID: ${{ fromJSON(inputs.params || '{}').fake_id }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: vehicle-care-network/agent-crew@v1
+      - run: mkdir -p radar-out
+      - name: Pick the model (set in Agent HQ)
+        id: model
+        continue-on-error: true
+        run: echo "model=$(node .crew/scripts/agents/hq.mjs model radar)" >> "$GITHUB_OUTPUT"
+
+      - name: Radar drafts the fake
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          RADAR_MODE: fake
+          RADAR_SERVICE: ${{ fromJSON(inputs.params || '{}').service }}
+          RADAR_TASK: ${{ fromJSON(inputs.params || '{}').task }}
+        with:
+          # The Claude subscription when its token is set; the API key only as the fallback (given both,
+          # the action uses the API key).
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_bots: ${{ vars.AGENT_HQ_BOT || 'vcn-agent-hq' }},${{ vars.AGENT_HQ_BOT || 'vcn-agent-hq' }}[bot]
+          prompt: |
+            Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: fake.
+            The service is in the environment variable RADAR_SERVICE; what the owner added, if anything, is in RADAR_TASK.
+          claude_args: |
+            --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
+            --max-turns 120
+            --allowedTools Bash,Read,Glob,Grep,Write,WebFetch
+
+      # Cost and tokens for Agent HQ's Spend view. Never fails the job.
+      - name: Report usage to HQ
+        continue-on-error: true
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node .crew/scripts/agents/usage.mjs "${{ steps.claude.outputs.execution_file }}" radar "fake" "" ""
+      - name: Send the fake to HQ
+        run: |
+          test -s radar-out/fake.json || { echo "::error::Radar didn't write radar-out/fake.json"; exit 1; }
+          node .crew/scripts/scout/fakes.mjs check radar-out/fake.json
+          node .crew/scripts/agents/hq.mjs fake-post "$FAKE_ID" radar-out/fake.json
+      # HQ shows the draft as running until it hears back.
+      - name: Tell HQ it failed
+        if: failure()
+        run: node .crew/scripts/agents/hq.mjs fake-fail "$FAKE_ID" "Radar's run failed before it sent a draft. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || true
 
   regression-check:
     if: inputs.event == 'schedule' && inputs.schedule == '0 13 * * *'
