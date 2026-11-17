@@ -28,7 +28,7 @@ locally. The steps below are for GitHub Actions; [on sandboxes](#on-vercel-sandb
 
 > **If you are Claude, setting this up for someone:**
 > - Ask first where the agents should run: **GitHub Actions**, **Vercel sandboxes** or **their own
->   machine** (the table below). Offer sandboxes only when the person has an Agent HQ. Then set up that
+>   machine** (the table above). Offer sandboxes only when the person has an Agent HQ. Then set up that
 >   one: [On Vercel sandboxes](#on-vercel-sandboxes) or [On your machine only](#on-your-machine-only) say
 >   what changes from the steps below.
 > - Work on a new branch and open a pull request. Never push to the default branch.
