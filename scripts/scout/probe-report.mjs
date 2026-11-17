@@ -4,12 +4,13 @@
  * the run as broken so HQ shows that rather than a stale "up".
  *
  * Env: GITHUB_REPOSITORY, PROBE_BASE_URL, RUN_URL, GITHUB_SHA, AGENT_HQ_URL, ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
- * Exits 1 when any probe failed, so the run shows red.
+ * Exits 1 when any probe failed, so the run shows red. Without AGENT_HQ_URL nothing is sent: the red run
+ * (and GitHub's notice of it) is the report.
  */
 import { existsSync, readFileSync } from 'node:fs';
 
 const out = process.env.PROBE_OUT || 'probe-out';
-const hq = (process.env.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app').replace(/\/$/, '');
+const hq = (process.env.AGENT_HQ_URL || '').replace(/\/$/, '');
 const repo = process.env.GITHUB_REPOSITORY;
 
 function fail(message) {
@@ -59,14 +60,16 @@ const report = {
   tests: (tests ?? []).slice(0, 40),
 };
 
-const res = await fetch(`${hq}/api/agents/probe`, {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${await idToken()}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify(report),
-});
-const text = await res.text();
-if (!res.ok) fail(`HQ answered ${res.status}: ${text.slice(0, 300)}`);
-console.log(`[Probe] ${report.state}: ${passed} of ${report.total} probes passed on ${report.baseUrl}; told HQ`);
+if (hq) {
+  const res = await fetch(`${hq}/api/agents/probe`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await idToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(report),
+  });
+  const text = await res.text();
+  if (!res.ok) fail(`HQ answered ${res.status}: ${text.slice(0, 300)}`);
+}
+console.log(`[Probe] ${report.state}: ${passed} of ${report.total} probes passed on ${report.baseUrl}; ${hq ? 'told HQ' : 'no Agent HQ set (AGENT_HQ_URL)'}`);
 if (tests === null) fail('The probe produced no results (see the steps above)');
 if (failed) {
   for (const t of tests.filter((t) => t.status !== 'passed' && t.status !== 'skipped')) console.error(`  ✗ ${t.title}: ${t.error}`);

@@ -42,7 +42,7 @@ HEARTBEAT=""
 REPORTED=""
 CLAUDE_EXIT=0
 # The identity the crew commits with: the HQ App's bot user, so runs on those pushes count as the App's.
-GIT_AS=(-c "user.name=$NAME (Agent HQ)" -c "user.email=351332603+vcn-agent-hq[bot]@users.noreply.github.com")
+GIT_AS=(-c "user.name=$NAME (Agent HQ)" -c "user.email=${AGENT_HQ_BOT_EMAIL:-351332603+vcn-agent-hq[bot]@users.noreply.github.com}")
 
 # ---- HQ
 hq_status() { [ -n "$MISSION_ID" ] && node "$HQ_MJS" status "$MISSION_ID" "$AGENT" "${1:-}" || true; }

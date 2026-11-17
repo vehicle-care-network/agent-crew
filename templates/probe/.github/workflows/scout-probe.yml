@@ -1,0 +1,33 @@
+name: Production probe
+
+# Is the live site up? Runs the read-only checks in e2e/scout/probe/ against production every 15 minutes:
+# plain Playwright, no agent, no Claude usage. A failed probe turns this run red (GitHub tells you), and
+# with Agent HQ the board's Live dot for this repo turns red too. The site is `probe.url` in
+# .github/agents/crew.json. The crew lives in vehicle-care-network/agent-crew; this file holds the schedule.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Probe another address instead of crew.json's probe.url
+        required: false
+        type: string
+
+concurrency:
+  group: scout-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    uses: vehicle-care-network/agent-crew/.github/workflows/scout-probe.yml@v1
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      base_url: ${{ inputs.base_url }}
+    # Only when a probe signs in: a dedicated, least-privilege account.
+    secrets:
+      PROBE_EMAIL: ${{ secrets.PROBE_EMAIL }}
+      PROBE_PASSWORD: ${{ secrets.PROBE_PASSWORD }}

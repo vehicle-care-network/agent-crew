@@ -148,7 +148,7 @@ only hide a failure, say so and leave the check in.
 ## Mode `smoke`: one scenario on main, on a schedule
 
 There is no PR. Main (or the production commit HQ named) is checked out, and `SCOUT_FOCUS` holds one
-smoke-test scenario Kayvan wrote: the steps a person would follow and what they expect to see. It runs
+smoke-test scenario the owner wrote: the steps a person would follow and what they expect to see. It runs
 again and again (daily, after each production deploy, by hand), so the spec you write is reused next time.
 
 1. **If a spec from the previous run exists** (`e2e/scout/smoke/*.spec.ts`), run it first. Fix it only if
@@ -160,12 +160,12 @@ again and again (daily, after each production deploy, by hand), so the spec you 
 3. Run `npx playwright test -c .crew/playwright.scout.config.ts e2e/scout/smoke`.
 4. Write `scout-out/bugs.json` for every real failure, with steps a person can follow cold, and
    `scout-out/summary.md` (short: what the scenario covers, what failed, what you couldn't test). The
-   result goes to the HQ mission for this run; a failure wakes Kayvan up, so don't report a test mistake
+   result goes to the HQ mission for this run; a failure wakes the owner up, so don't report a test mistake
    as a bug.
 
 ### A check: how it works today (`CHECK: yes`)
 
-The scenario is step 1 of a new test. Kayvan wrote what a user does and what they expect to see, and
+The scenario is step 1 of a new test. The owner wrote what a user does and what they expect to see, and
 wants to know whether the app does that today, before anything is saved. Run it as a smoke test (the
 spec in `e2e/scout/smoke/`, an `evidence()` screenshot at each step), then say what you saw in
 `scout-out/check.json`:
@@ -178,7 +178,7 @@ spec in `e2e/scout/smoke/`, an `evidence()` screenshot at each step), then say w
 
 - `expected`: you reached every step, and the app did what the scenario says.
 - `wrong`: you reached a step and the app did something else. Say which step and what it did instead:
-  that is what Kayvan marks as a known bug.
+  that is what the owner marks as a known bug.
 - `cant-tell`: you could not get to the point where it would show. The scenario names a page or
   control that doesn't exist, a step is ambiguous, the data it needs couldn't be seeded, an integration
   has no key here. Say what stopped you and what would let you tell (a seed, a clearer step, an

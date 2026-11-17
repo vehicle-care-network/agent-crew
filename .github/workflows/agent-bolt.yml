@@ -9,7 +9,7 @@ name: Agent · Bolt
 on:
   workflow_call:
     # Named, not inherited: GitHub honours `secrets: inherit` only when the caller is in the crew's own org.
-    # Callers elsewhere (kayvannj/*) pass these two by name; same-org callers may still inherit.
+    # Callers in any other org or account pass these two by name; same-org callers may still inherit.
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         description: 'Claude subscription token; preferred'
@@ -38,7 +38,9 @@ jobs:
       BOLT_MODE: ${{ fromJSON(inputs.params).mode }}
       BOLT_BRANCH: ${{ fromJSON(inputs.params).branch }}
       GH_TOKEN: ${{ github.token }}
-      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL }}
+      # The HQ GitHub App's commit identity: <its user id>+<its slug>[bot]@users.noreply.github.com.
+      AGENT_HQ_BOT_EMAIL: ${{ vars.AGENT_HQ_BOT_EMAIL || '351332603+vcn-agent-hq[bot]@users.noreply.github.com' }}
     steps:
       # Building on an existing PR branch: it must exist in this repo (never a fork), and Bolt pushes to it.
       - name: Read the request
@@ -104,7 +106,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           # Agent HQ starts these runs as its GitHub App; the action refuses bot-started runs unless listed.
-          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          allowed_bots: ${{ vars.AGENT_HQ_BOT || 'vcn-agent-hq' }},${{ vars.AGENT_HQ_BOT || 'vcn-agent-hq' }}[bot]
           prompt: |
             Follow the brief in .crew/briefs/BOLT.md.
             MISSION_ID: ${{ env.MISSION_ID }}
@@ -163,7 +165,7 @@ jobs:
           git add -A
           git diff --cached --quiet && { echo "::error::Bolt made no changes"; exit 1; }
           title=$(jq -r .title agent-out/pr.json)
-          git -c user.name="Bolt (Agent HQ)" -c user.email="351332603+vcn-agent-hq[bot]@users.noreply.github.com" \
+          git -c user.name="Bolt (Agent HQ)" -c user.email="$AGENT_HQ_BOT_EMAIL" \
             commit -q -m "$title" -m "Agent HQ mission $MISSION_ID"
           git push -q "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$BRANCH"
           node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg b "$BRANCH" --arg t "$title" --arg s "$(jq -r .summary agent-out/pr.json)" '{agent:"bolt",type:"built",branch:$b,title:$t,summary:$s}')"

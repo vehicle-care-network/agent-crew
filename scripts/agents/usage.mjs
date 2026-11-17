@@ -4,12 +4,14 @@
  *
  *   node .crew/scripts/agents/usage.mjs <execution_file> <agent> <task> [missionId] [pr]
  *
+ * Without AGENT_HQ_URL it only prints the line to the run's log.
+ *
  * Env: AGENT_HQ_URL, ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN (the job needs `permissions: id-token: write`).
  */
 import { existsSync, readFileSync } from 'node:fs';
 
 const [file, agent, task, missionId, pr] = process.argv.slice(2);
-const hq = (process.env.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app').replace(/\/$/, '');
+const hq = (process.env.AGENT_HQ_URL || '').replace(/\/$/, '');
 
 try {
   if (!file || !existsSync(file)) throw new Error(`No execution file at "${file}"; the agent step didn't run`);
@@ -39,6 +41,8 @@ try {
     tokens: { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 },
   };
   console.log(`[Usage] ${agent} ${task}: $${body.costUsd.toFixed(2)}, ${body.turns} turns, ${model}, ${billing ?? 'unknown billing'}${body.error ? `, failed: ${body.error}` : ''}`);
+
+  if (!hq) process.exit(0); // no Agent HQ: the line above is the record
 
   const { ACTIONS_ID_TOKEN_REQUEST_URL: url, ACTIONS_ID_TOKEN_REQUEST_TOKEN: token } = process.env;
   if (!url || !token) throw new Error('No GitHub OIDC token; the job needs `permissions: id-token: write`');

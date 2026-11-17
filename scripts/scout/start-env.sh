@@ -89,11 +89,11 @@ if [ -n "${CI:-}" ] && [ -n "$hosts" ]; then
   # agent talks to api.anthropic.com (blocked, every run dies with ECONNREFUSED before testing). Never block
   # either, whatever crew.json says. To keep the app under test from calling Claude, leave ANTHROPIC_API_KEY
   # out of scout.env instead: Scout's environment never sets it.
-  hq_host="$(node -e 'process.stdout.write(new URL(process.env.AGENT_HQ_URL || "https://agent-hq-cyan.vercel.app").hostname)')"
+  hq_host="$(node -e 'const u=process.env.AGENT_HQ_URL;process.stdout.write(u?new URL(u).hostname:"no-agent-hq")')"
   keep=""
   for h in $hosts; do
     case "$h" in
-      "$hq_host"|agent-hq-cyan.vercel.app|vcntools.ai|www.vcntools.ai)
+      "$hq_host")
         echo "::warning::[ScoutEnv] Not blocking $h: it is Agent HQ, and Scout reports there. Remove it from scout.blockHosts in crew.json." ;;
       *.anthropic.com|anthropic.com|claude.ai|*.claude.ai)
         echo "::warning::[ScoutEnv] Not blocking $h: Scout's own agent runs on Claude. Remove it from scout.blockHosts in crew.json; the app can't call Claude without ANTHROPIC_API_KEY, which Scout never sets." ;;

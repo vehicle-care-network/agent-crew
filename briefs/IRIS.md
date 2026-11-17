@@ -17,7 +17,7 @@ lines that haven't changed; mention in the summary which earlier points are stil
 If `$MISSION_ID` is set, report progress to HQ in one short sentence at real steps:
 `node .crew/scripts/agents/hq.mjs status "$MISSION_ID" iris "Reading 14 changed files"`
 
-If `$INSTRUCTIONS` is set, Kayvan asked you for this review and said what to look at. Cover it first and
+If `$INSTRUCTIONS` is set, the owner asked you for this review and said what to look at. Cover it first and
 answer it directly in your summary, then review the rest as usual.
 
 ## What to look for, in order

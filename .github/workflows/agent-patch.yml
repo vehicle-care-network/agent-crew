@@ -8,7 +8,7 @@ name: Agent · Patch
 on:
   workflow_call:
     # Named, not inherited: GitHub honours `secrets: inherit` only when the caller is in the crew's own org.
-    # Callers elsewhere (kayvannj/*) pass these two by name; same-org callers may still inherit.
+    # Callers in any other org or account pass these two by name; same-org callers may still inherit.
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         description: 'Claude subscription token; preferred'
@@ -39,7 +39,9 @@ jobs:
       PATCH_REASON: ${{ fromJSON(inputs.params).reason || 'review' }}
       INSTRUCTIONS: ${{ fromJSON(inputs.params).instructions }}
       GH_TOKEN: ${{ github.token }}
-      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app' }}
+      AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL }}
+      # The HQ GitHub App's commit identity: <its user id>+<its slug>[bot]@users.noreply.github.com.
+      AGENT_HQ_BOT_EMAIL: ${{ vars.AGENT_HQ_BOT_EMAIL || '351332603+vcn-agent-hq[bot]@users.noreply.github.com' }}
     steps:
       - name: Find the PR's branch
         id: pr
@@ -71,7 +73,7 @@ jobs:
         run: |
           mkdir -p agent-out
           git fetch -q origin "$BASE"
-          git -c user.name="Patch (Agent HQ)" -c user.email="351332603+vcn-agent-hq[bot]@users.noreply.github.com" \
+          git -c user.name="Patch (Agent HQ)" -c user.email="$AGENT_HQ_BOT_EMAIL" \
             merge --no-ff --no-commit "origin/$BASE" || true
           git diff --name-only --diff-filter=U > agent-out/conflicts.txt
           echo "Conflicted files:"; cat agent-out/conflicts.txt
@@ -112,7 +114,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           # Agent HQ starts these runs as its GitHub App; the action refuses bot-started runs unless listed.
-          allowed_bots: vcn-agent-hq,vcn-agent-hq[bot]
+          allowed_bots: ${{ vars.AGENT_HQ_BOT || 'vcn-agent-hq' }},${{ vars.AGENT_HQ_BOT || 'vcn-agent-hq' }}[bot]
           prompt: |
             Follow the brief in .crew/briefs/PATCH.md.
             PR_NUMBER: ${{ env.PR_NUMBER }}
@@ -174,7 +176,7 @@ jobs:
             request) msg='Make the requested change' ;;
             *) msg='Address review feedback' ;;
           esac
-          git -c user.name="Patch (Agent HQ)" -c user.email="351332603+vcn-agent-hq[bot]@users.noreply.github.com" \
+          git -c user.name="Patch (Agent HQ)" -c user.email="$AGENT_HQ_BOT_EMAIL" \
             commit -q -m "$msg" -m "Agent HQ mission $MISSION_ID"
           git push -q "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$BRANCH"
           node .crew/scripts/agents/hq.mjs report "$MISSION_ID" "$(jq -n --arg s "$(cat agent-out/summary.md 2>/dev/null | head -c 1500)" '{agent:"patch",type:"fixed",summary:$s}')"

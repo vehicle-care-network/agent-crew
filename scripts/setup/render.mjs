@@ -10,15 +10,14 @@
  * Also writes the GitHub Actions outputs the workflows need (node version, Scout port and base URL).
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { CONFIG, REQUIRED, lookupIn } from './required.mjs';
 
-const CONFIG = '.github/agents/crew.json';
 if (!existsSync(CONFIG)) {
-  console.error(`[CrewSetup] ${CONFIG} is missing. Every repo the crew works in needs one; see the agent-crew README.`);
+  console.error(`[CrewSetup] ${CONFIG} is missing. Every repo the crew works in needs one; see SETUP.md in the agent-crew repo.`);
   process.exit(1);
 }
 const config = JSON.parse(readFileSync(CONFIG, 'utf8'));
 
-const REQUIRED = ['product', 'commands.install', 'commands.format', 'commands.lint', 'commands.typecheck', 'commands.test', 'paths.source', 'paths.models', 'paths.tests', 'scout.port', 'scout.readyPath'];
 const missing = REQUIRED.filter((k) => lookup(k) === undefined);
 if (missing.length) {
   console.error(`[CrewSetup] ${CONFIG} is missing: ${missing.join(', ')}`);
@@ -26,7 +25,7 @@ if (missing.length) {
 }
 
 function lookup(path) {
-  return path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), config);
+  return lookupIn(config, path);
 }
 
 function render(file) {

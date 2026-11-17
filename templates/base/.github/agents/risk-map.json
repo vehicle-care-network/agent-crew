@@ -1,0 +1,29 @@
+{
+  "$comment": "How much a change can hurt, by what it touches. Radar labels every PR from it (impact:low|normal|high|critical), Iris sets the final label, and Scout sizes its testing by it. The highest matching tier wins. Patterns are globs (** any depth, * one segment) or, with \"keyword\", a case-insensitive word in the path. Rules marked generic are broad catch-alls that the low tier may override. Make the globs match this repo.",
+  "tiers": {
+    "critical": {
+      "why": "Decides who gets in, moves money, or holds secrets",
+      "rules": [
+        { "name": "sign-in and access", "keyword": "auth|login|session|permission|access" },
+        { "name": "money", "keyword": "payment|billing|checkout|invoice|stripe" },
+        { "name": "secrets and credentials", "keyword": "credential|secret|token" },
+        { "name": "security rules and middleware", "glob": ["firestore.rules", "storage.rules", "middleware.ts", "src/middleware.ts"] }
+      ]
+    },
+    "high": {
+      "why": "What every page depends on: the API, the data's shape, shared code",
+      "rules": [
+        { "name": "API routes", "generic": true, "glob": ["app/api/**", "src/app/api/**", "pages/api/**", "src/pages/api/**"] },
+        { "name": "data shape", "glob": ["**/migrations/**", "**/schema.*", "firestore.indexes.json", "prisma/**"] },
+        { "name": "dependencies", "glob": ["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"] }
+      ]
+    },
+    "low": {
+      "why": "Tests, docs, the crew's own setup and tooling",
+      "rules": [
+        { "name": "tests, docs and tooling", "glob": ["**/*.test.*", "**/*.spec.*", "e2e/**", "docs/**", "**/*.md", ".github/**", "scripts/scout/**", ".gitignore"] }
+      ]
+    }
+  },
+  "default": "normal"
+}

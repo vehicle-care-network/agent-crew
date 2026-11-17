@@ -1,0 +1,59 @@
+name: Agent · Iris
+
+# Iris, the reviewer. She reviews every new PR on her own, and anyone who belongs to the repo can ask by
+# commenting `/iris` on a PR. With Agent HQ, HQ also starts her on its agents' PRs. The crew lives in vehicle-care-network/agent-crew; this file holds
+# the triggers and starts it here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR to review
+        required: false
+        type: string
+      instructions:
+        description: What Iris should look at (optional)
+        required: false
+        type: string
+      params:
+        description: 'JSON from Agent HQ: { pr_number, mission_id, round, instructions }'
+        required: false
+        type: string
+  issue_comment:
+    types: [created]
+  # Every new PR gets a review without anyone asking, and another when new commits change its files.
+  # Bolt's agent/* PRs are skipped here because HQ already sends Iris to them; drafts wait until they're
+  # marked ready.
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+jobs:
+  iris:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        !startsWith(github.event.pull_request.head.ref, 'agent/')) ||
+      (github.event.issue.pull_request && startsWith(github.event.comment.body, '/iris') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    # Job-level so it only applies to runs that pass `if`: a skipped run (say, another bot commenting
+    # on the PR) must not cancel one that's working.
+    concurrency:
+      group: agent-iris-${{ inputs.pr_number || fromJSON(inputs.params || '{}').pr_number || github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: true
+    uses: vehicle-care-network/agent-crew/.github/workflows/agent-iris.yml@v1
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    with:
+      params: ${{ inputs.params }}
+      pr_number: ${{ inputs.pr_number || format('{0}', github.event.issue.number || github.event.pull_request.number) }}
+      instructions: ${{ inputs.instructions }}
+      event: ${{ github.event_name }}
+      action: ${{ github.event.action }}
+    # Passed by name: `secrets: inherit` reaches the crew only from inside the crew's own organization.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

@@ -1,0 +1,28 @@
+{
+  "$comment": "This repo's answers for the agent crew (https://github.com/vehicle-care-network/agent-crew). The crew's briefs and workflows read it. Replace every TODO; the crew's check script (scripts/setup/check.mjs) lists what is left.",
+  "product": "TODO: one sentence on what this product is and who uses it",
+  "node": "22",
+  "commands": {
+    "$comment": "Each runs with `bash -c` from the repo root. Use \"true\" for one this repo doesn't have (no formatter, say).",
+    "install": "npm ci",
+    "format": "true",
+    "lint": "npm run lint",
+    "typecheck": "npx tsc --noEmit",
+    "test": "npm test"
+  },
+  "paths": {
+    "$comment": "Where the code lives. These only feed the briefs' prose, so the agents know where to look.",
+    "source": ["src/"],
+    "models": "src/types/",
+    "tests": "src/**/*.test.ts"
+  },
+  "scout": {
+    "$comment": "How Scout starts the app (Next.js on Firebase emulators). Leave as is until you add Scout.",
+    "port": 3000,
+    "readyPath": "/",
+    "warm": ["/"],
+    "env": {},
+    "firebaseRules": false,
+    "blockHosts": []
+  }
+}
