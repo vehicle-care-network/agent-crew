@@ -1,0 +1,55 @@
+name: Agent · Radar
+
+# Radar, the technical analyst: labels every PR's impact from .github/agents/risk-map.json (no AI, seconds).
+# Run it by hand for an audit (major upgrades, advisories, cleanup): its ideas are listed in the run's
+# summary, or go to Agent HQ's Ideas inbox when you have one. With Agent HQ it also estimates new missions.
+# The crew lives in vehicle-care-network/agent-crew; this file holds the triggers and starts it here.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  # Scheduled runs cost Claude usage, so they start switched off. Uncomment the ones you want:
+  # schedule:
+  #   - cron: '0 14 * * 1' # weekly audit, Mondays 14:00 UTC
+  #   - cron: '0 15 1 * *' # monthly deep audit, the 1st
+  #   - cron: '0 13 * * *' # daily: is main due for Scout's regression run? (needs scout-qa.yml)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: triage (one mission) or audit
+        required: false
+        type: choice
+        options: [audit, triage]
+        default: audit
+      scope:
+        description: Audit depth
+        required: false
+        type: choice
+        options: [weekly, monthly]
+        default: weekly
+      params:
+        description: 'JSON from Agent HQ: { mode, mission_id, task, scope }'
+        required: false
+        type: string
+
+jobs:
+  radar:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: vehicle-care-network/agent-crew/.github/workflows/agent-radar.yml@v1
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: write
+      id-token: write
+    with:
+      params: ${{ inputs.params }}
+      event: ${{ github.event_name }}
+      schedule: ${{ github.event.schedule }}
+      pr_number: ${{ format('{0}', github.event.pull_request.number) }}
+      mode: ${{ inputs.mode }}
+      scope: ${{ inputs.scope }}
+    # Passed by name: `secrets: inherit` reaches the crew only from inside the crew's own organization.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

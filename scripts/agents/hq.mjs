@@ -12,12 +12,16 @@
  *   node .crew/scripts/agents/hq.mjs model <agent>                 # prints the model chosen for the agent in HQ (empty when none; never fails)
  *   node .crew/scripts/agents/hq.mjs specs-pull                    # Scout in a sandbox: the specs HQ kept from this PR's previous run, into e2e/scout (env PR_NUMBER); prints the count
  *
- * Env: AGENT_HQ_URL (default https://agent-hq-cyan.vercel.app), ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
+ * Env: AGENT_HQ_URL (your HQ's address), ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
+ *
+ * Without AGENT_HQ_URL the crew runs on its own (Iris, Scout and Radar from the repo's own events): reads
+ * answer "nothing", Scout's check-in is skipped, ideas are listed in the run's summary, and anything that
+ * belongs to a mission fails with what to set, since a mission only exists in HQ.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 
-const hq = (process.env.AGENT_HQ_URL || 'https://agent-hq-cyan.vercel.app').replace(/\/$/, '');
+const hq = (process.env.AGENT_HQ_URL || '').replace(/\/$/, '');
 const [command, missionId, ...rest] = process.argv.slice(2);
 
 function fail(message) {
@@ -42,6 +46,36 @@ async function post(path, body) {
   const text = await res.text();
   if (!res.ok) fail(`HQ answered ${res.status} for ${path}: ${text.slice(0, 300)}`);
   return JSON.parse(text);
+}
+
+if (!hq) {
+  // No Agent HQ: nothing to ask and nobody to tell.
+  if (command === 'model') process.exit(0);
+  if (command === 'ideas-known') {
+    console.log('[]');
+    process.exit(0);
+  }
+  if (command === 'specs-pull') {
+    console.log(0);
+    process.exit(0);
+  }
+  if (command === 'qa' && !process.env.MISSION_ID) {
+    console.error('[AgentHq] No Agent HQ set (AGENT_HQ_URL); Scout reports on the PR only');
+    process.exit(0);
+  }
+  if (command === 'ideas-post') {
+    // The ideas would go to HQ's inbox; without one, list them where the person who started the run looks.
+    const ideas = JSON.parse(readFileSync(missionId, 'utf8'));
+    const lines = ideas.map((i) => `- **${i.title ?? 'Untitled'}**${i.why ? `: ${String(i.why).split('\n')[0]}` : ''}`);
+    console.log(`[AgentHq] No Agent HQ set (AGENT_HQ_URL); ${ideas.length} idea(s) listed in the run's summary`);
+    for (const line of lines) console.log(`  ${line}`);
+    if (process.env.GITHUB_STEP_SUMMARY && lines.length) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Ideas from this run\n\n${lines.join('\n')}\n`);
+    process.exit(0);
+  }
+  fail(
+    `AGENT_HQ_URL is not set, and \`${command}\` belongs to an Agent HQ mission. Set the repository (or organization) variable ` +
+      'AGENT_HQ_URL to your HQ\'s address: gh variable set AGENT_HQ_URL --body https://your-hq.example',
+  );
 }
 
 if (command === 'model') {

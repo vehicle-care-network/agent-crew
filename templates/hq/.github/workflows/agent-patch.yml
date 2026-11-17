@@ -1,0 +1,27 @@
+name: Agent · Patch
+
+# Patch, the fixer. The crew lives in vehicle-care-network/agent-crew; this file only starts it here.
+# Needs Agent HQ: it starts this workflow for a mission and the run reports back to it.
+# Agent HQ sends one input, `params` (JSON), so adding a field never needs a change in this repo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      params:
+        description: 'JSON from Agent HQ: { mission_id, pr_number, reason: review|qa|build|conflicts|request, instructions, round }'
+        required: true
+        type: string
+
+jobs:
+  patch:
+    uses: vehicle-care-network/agent-crew/.github/workflows/agent-patch.yml@v1
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    with:
+      params: ${{ inputs.params }}
+    # Passed by name: `secrets: inherit` reaches the crew only from inside the crew's own organization.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

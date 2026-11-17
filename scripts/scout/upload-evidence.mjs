@@ -32,7 +32,13 @@ function fail(message) {
 const coverage = process.env.SCOUT_MODE === 'coverage';
 const regression = process.env.SCOUT_MODE === 'regression' || coverage;
 const smokeMission = process.env.SCOUT_MODE === 'smoke' || regression ? process.env.MISSION_ID || '' : '';
-if (!hq || !repo || (!pr && !regression && !smokeMission)) fail('AGENT_HQ_URL, GITHUB_REPOSITORY and PR_NUMBER (or MISSION_ID for a smoke test) are required');
+if (!hq) {
+  // No Agent HQ: the evidence stays in the run's artifacts, and the PR comment links there.
+  if (process.env.MISSION_ID) fail(`AGENT_HQ_URL is not set, but this run belongs to Agent HQ mission ${process.env.MISSION_ID}. Set the repository (or organization) variable AGENT_HQ_URL to your HQ's address.`);
+  console.log("[ScoutEvidence] No Agent HQ set (AGENT_HQ_URL): the evidence is in the run's artifacts (scout-evidence)");
+  process.exit(0);
+}
+if (!repo || (!pr && !regression && !smokeMission)) fail('AGENT_HQ_URL, GITHUB_REPOSITORY and PR_NUMBER (or MISSION_ID for a smoke test) are required');
 // SCOUT_HQ_TOKEN is for local testing against `next dev` only (see agent-hq lib/github/oidc.ts).
 if (!process.env.SCOUT_HQ_TOKEN && (!ACTIONS_ID_TOKEN_REQUEST_URL || !ACTIONS_ID_TOKEN_REQUEST_TOKEN)) {
   fail('No GitHub OIDC token available; the job needs `permissions: id-token: write`');

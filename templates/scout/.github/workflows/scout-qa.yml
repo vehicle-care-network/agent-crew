@@ -1,0 +1,71 @@
+name: Scout QA
+
+# Scout tests a PR the way a user would and posts screenshots, videos and results on the PR.
+# Opt-in per PR, so nothing runs (or costs) until someone asks:
+#   - add the `scout` label (re-runs on every push while the label stays), or
+#   - comment `/scout` or `/scout <what to focus on>`, or
+#   - run this workflow by hand with a PR number (Agent HQ does this for its missions).
+# Scout runs a Next.js app with `next dev` on Firebase emulators; see the crew's SETUP.md for what it needs.
+# Mode `regression` tests the latest main across every core flow instead of one PR.
+# The crew lives in vehicle-care-network/agent-crew; this file holds the triggers and starts it here.
+
+run-name: ${{ contains(inputs.params, '"coverage"') && 'Scout coverage (specs for core flows)' || (inputs.mode == 'regression' || contains(inputs.params, '"regression"')) && 'Scout regression on main' || github.event.pull_request.title || github.event.issue.title || format('Scout QA on PR {0}', inputs.pr_number || fromJSON(inputs.params || '{}').pr_number) }}
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: pr (one PR) or regression (latest main, every core flow)
+        required: false
+        type: choice
+        options: [pr, regression]
+        default: pr
+      pr_number:
+        description: PR number to test (pr mode)
+        required: false
+        type: string
+      focus:
+        description: Optional. What Scout should cover first, or why a regression run was started
+        required: false
+        type: string
+      params:
+        description: 'JSON from Agent HQ: { mode, pr_number, focus }'
+        required: false
+        type: string
+
+jobs:
+  scout:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+        ((github.event.action == 'labeled' && github.event.label.name == 'scout') ||
+         (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'scout')))) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '/scout') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    # Job-level so it only applies to runs that pass `if`: a skipped run (say, another bot commenting
+    # on the PR) must not cancel one that's working.
+    concurrency:
+      group: scout-qa-${{ contains(inputs.params, '"coverage"') && 'coverage' || (inputs.mode == 'regression' || contains(inputs.params, '"regression"')) && 'regression' || github.event.pull_request.number || github.event.issue.number || inputs.pr_number || fromJSON(inputs.params || '{}').pr_number }}
+      cancel-in-progress: true
+    uses: vehicle-care-network/agent-crew/.github/workflows/scout-qa.yml@v1
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    with:
+      params: ${{ inputs.params }}
+      mode: ${{ inputs.mode }}
+      pr_number: ${{ format('{0}', github.event.pull_request.number || github.event.issue.number || inputs.pr_number) }}
+      focus: ${{ inputs.focus }}
+      comment: ${{ github.event.comment.body }}
+    # Passed by name: `secrets: inherit` reaches the crew only from inside the crew's own organization.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
