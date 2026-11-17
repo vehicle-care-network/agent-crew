@@ -8,21 +8,29 @@ production probe, and Agent HQ.
 
 ## First: where should the agents run?
 
+**What you need.** All three need a Claude subscription or an Anthropic API key; that is what every run
+is billed to. The rest differs:
+
 | | GitHub Actions | Vercel sandboxes | Your machine |
 | --- | --- | --- | --- |
-| What starts a run | Workflows in your repo, on its own events | Your Agent HQ, when GitHub tells it about a PR, a label or a comment | You, by typing `/crew` in Claude Code |
-| Which agents | Iris, Radar and Scout on their own; all seven with an Agent HQ | All seven | Nova, Bolt, Iris and Patch |
-| What you need | A GitHub repo and a Claude credential | An **Agent HQ** with Vercel access. Without an HQ there is nothing to start a sandbox | Claude Code, signed in |
-| Where the Claude credential lives | A secret on the repo or organization | In your HQ, once for every repo | Nowhere: runs use your Claude Code sign-in |
+| **Cost of the compute** | **Paid**, to GitHub: Actions minutes. Public repos and each plan's monthly allowance are free | **Paid**, to Vercel: Sandbox time on the account your Agent HQ runs on | **Free**: your own computer |
+| Claude | Subscription or API key, as a secret on the repo or organization | Subscription or API key, held by your Agent HQ | Subscription or API key, through your Claude Code sign-in |
+| Accounts and access | A GitHub repo with Actions on, and admin access to add the secret | An **Agent HQ**, a Vercel account with Sandbox, and HQ's GitHub App on the repo | [Claude Code](https://claude.com/claude-code) on your machine |
 | What your repo keeps | The answers in `.github/agents/` and thin caller workflows | Only the answers in `.github/agents/` | The answers in `.github/agents/` and the `/crew` skill |
-| What a run costs besides Claude | GitHub Actions minutes | Vercel Sandbox time on your HQ's Vercel account | Nothing |
 
-- **GitHub Actions** is the one that works on its own for a team: every pull request is reviewed and
-  labelled without anyone asking.
-- **Vercel sandboxes** need an Agent HQ. With one you can pick either, and change later in HQ (Setup →
-  Runners) without touching the repo again.
-- **Your machine** needs no server, no secret and no GitHub Actions. Nothing runs by itself: the crew works
-  when you ask it to, and a pull request nobody ran `/crew` for gets no review.
+**The trade-offs.**
+
+| | GitHub Actions | Vercel sandboxes | Your machine |
+| --- | --- | --- | --- |
+| **Scale** | **Scales with your needs**: GitHub adds runners as pull requests come in, many at once | **Scales with your needs**: HQ starts a sandbox per run, many at once | **Limited by your computer**: runs share its processor and memory, and work only while it is on and Claude Code is open |
+| What starts a run | Workflows in your repo, on its own events | Your Agent HQ, when GitHub tells it about a PR, a label or a comment | You, by typing `/crew` in Claude Code |
+| Runs by itself | Yes: every pull request is reviewed and labelled | Yes, and HQ drives missions from request to release | No: a pull request nobody ran `/crew` for gets no review |
+| Which agents | Iris, Radar and Scout on their own; all seven with an Agent HQ | All seven | Nova, Bolt, Iris and Patch |
+| Works without Agent HQ | Yes | No: without an HQ there is nothing to start a sandbox | Yes |
+| Best for | A team that wants every pull request checked, with nothing to host | A team with an Agent HQ that wants no workflows or secrets in its repos | One person trying the crew, or building on their own |
+
+With an Agent HQ you can move a repo between GitHub Actions and sandboxes later (Setup → Runners) without
+touching the repo again.
 
 The `/crew` skill is installed with all three, so a repo on GitHub Actions or sandboxes can also build
 locally. The steps below are for GitHub Actions; [on sandboxes](#on-vercel-sandboxes) and
@@ -43,9 +51,9 @@ locally. The steps below are for GitHub Actions; [on sandboxes](#on-vercel-sandb
 >   Next.js on Firebase.
 > - Finish by running the check (step 4) and reporting its output as it is.
 
-## What you need
+## What you need for the steps below
 
-- A GitHub repo with Actions enabled, and admin access to it (to add a secret).
+- A GitHub repo with Actions enabled, and admin access to it (to add a secret). Not for your machine only.
 - The [`gh`](https://cli.github.com) CLI, signed in (`gh auth status`), and Node 20 or newer.
 - A Claude subscription or an Anthropic API key. Each run is billed to that account.
 - For Scout only: a Next.js app that uses Firebase (Firestore and Auth), and npm.
