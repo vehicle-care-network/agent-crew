@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## Unreleased
+## 1.10.0
 
 - **The crew runs without Agent HQ.** With no `AGENT_HQ_URL` variable, Iris, Scout, Radar's labels and the
   production probe run from the repo's own events and report on the PR and the run. A run that belongs to
@@ -19,7 +19,7 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   sandboxes started by an Agent HQ, and your own machine (the `/crew` skill only), and has the steps for
   each. `scripts/setup/check.mjs --sandbox` and `--local` check those setups: no caller workflows, no
   Claude secret and no `AGENT_HQ_URL` are expected there, and `--local` requires the skill.
-- **`AGENT_HQ_URL` no longer has a default.** Before releasing this, a repo that reports to an HQ must set
+- **`AGENT_HQ_URL` no longer has a default.** A repo that reports to an HQ must set
   the variable (repo or organization): `gh variable set AGENT_HQ_URL --body https://your-hq.example`.
 - The HQ App's name and commit identity are variables (`AGENT_HQ_BOT`, `AGENT_HQ_BOT_EMAIL`); the defaults
   are unchanged.
