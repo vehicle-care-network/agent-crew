@@ -6,7 +6,24 @@ about ten minutes, and the **`/crew` skill**: Nova, Bolt, Iris and Patch on your
 Code ([below](#build-something-with-the-crew-on-your-machine)). Steps 6 to 8 are optional: **Scout**, the
 production probe, and Agent HQ.
 
+## First: where should the agents run?
+
+| | GitHub Actions | Vercel sandboxes |
+| --- | --- | --- |
+| What starts a run | Workflows in your repo, on its own events | Your Agent HQ, when GitHub tells it about a PR, a label or a comment |
+| What you need | A GitHub repo and a Claude credential | An **Agent HQ** with Vercel access. Without an HQ there is nothing to start a sandbox |
+| Where the Claude credential lives | A secret on the repo or organization | In your HQ, once for every repo |
+| What your repo keeps | The answers in `.github/agents/` and thin caller workflows | Only the answers in `.github/agents/` |
+| What a run costs besides Claude | GitHub Actions minutes | Vercel Sandbox time on your HQ's Vercel account |
+
+Pick **GitHub Actions** unless you have an Agent HQ: it is the one that works on its own. With an HQ you
+can pick either, and change later in HQ (Setup → Runners) without touching the repo again. The steps below
+are for GitHub Actions; [on sandboxes](#on-vercel-sandboxes) says what changes.
+
 > **If you are Claude, setting this up for someone:**
+> - Ask first where the agents should run: **GitHub Actions** or **Vercel sandboxes** (the table below).
+>   Offer sandboxes only when the person has an Agent HQ; if they don't, say so and use GitHub Actions.
+>   Then set up that one: for sandboxes follow [On Vercel sandboxes](#on-vercel-sandboxes).
 > - Work on a new branch and open a pull request. Never push to the default branch.
 > - Never ask for a token or key in the chat, and never write one to a file. Step 3 is the person's: give
 >   them the commands to run themselves.
@@ -124,6 +141,43 @@ under `.github/`, and this one adds the skill too.) Then, on the next pull reque
 - Comment `/iris look at the error handling` on any PR to ask her yourself.
 
 Runs are under the repo's **Actions** tab. That's the base setup done.
+
+## On Vercel sandboxes
+
+Your Agent HQ starts every run in a sandbox of its own, so the repo holds no workflows and no secret. The
+steps above change like this:
+
+- **Step 2:** copy the answers and the skill, not the workflows, then fill them in as described there:
+
+  ```bash
+  mkdir -p .github && cp -Rn "$CREW/templates/base/.github/agents" .github/
+  cp -Rn "$CREW/templates/local/." .
+  ```
+
+- **Step 3:** skip it. The Claude credential is the one your HQ holds.
+- **Step 4:** tell the check which setup this is:
+
+  ```bash
+  node "$CREW/scripts/setup/check.mjs" --github --sandbox
+  ```
+
+- **Step 5:** commit, push and merge the same way. Nothing runs until HQ knows the repo:
+  1. Install your HQ's GitHub App on the repo.
+  2. Have the repo added to your HQ's list of repos.
+  3. In HQ, open **Setup → Runners** and set the repo to **Vercel sandboxes, every agent**.
+
+  From then on HQ starts Iris and Radar's label on each pull request, and the other agents from missions.
+- **Step 6 (Scout):** copy everything except the workflow. HQ starts Scout on the `scout` label or `/scout`:
+
+  ```bash
+  cp -Rn "$CREW/templates/scout/." . && rm .github/workflows/scout-qa.yml
+  ```
+
+- **Step 7 (the probe)** is a GitHub workflow either way, and uses no Claude.
+- **Step 8:** skip it. No caller workflows and no `AGENT_HQ_URL`: HQ gives each run its own address.
+
+To move a repo from GitHub Actions to sandboxes later, set it in HQ's Runners and delete the caller
+workflows (`agent-*.yml`, `scout-qa.yml`), or each agent runs in both places.
 
 ## Build something with the crew, on your machine
 
