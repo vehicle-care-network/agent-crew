@@ -6,7 +6,7 @@ description: >
 
 outputs:
   node:
-    description: Node version for this repo (.nvmrc, then crew.json "node", then 22)
+    description: Node version for this repo (.nvmrc, then crew.json "node", then the current LTS)
     value: ${{ steps.render.outputs.node }}
   scout_port:
     description: Port Scout starts the app on (crew.json scout.port)
