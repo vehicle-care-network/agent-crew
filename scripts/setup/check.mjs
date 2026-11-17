@@ -152,6 +152,28 @@ if (has('probe')) {
   else bad('No specs in e2e/scout/probe/: copy templates/probe/e2e/scout/probe/up.spec.ts');
 }
 
+// --- The local skill -------------------------------------------------------------------------------
+const SKILL = '.claude/skills/crew';
+if (existsSync(SKILL)) {
+  section('The /crew skill (Nova, Bolt, Iris and Patch on your machine, in Claude Code)');
+  if (!existsSync(`${SKILL}/SKILL.md`)) {
+    bad(`${SKILL}/SKILL.md is missing: copy templates/local/ from the crew`);
+  } else {
+    const front = /^---\n([\s\S]*?)\n---\n/.exec(read(`${SKILL}/SKILL.md`))?.[1] ?? '';
+    if (/^name:\s*crew\s*$/m.test(front) && /^description:\s*\S/m.test(front)) ok(`${SKILL}/SKILL.md: type /crew and what to build, in Claude Code`);
+    else bad(`${SKILL}/SKILL.md has no frontmatter with \`name: crew\` and a \`description\`: Claude Code won't offer it as /crew. Copy it again from templates/local/`);
+  }
+  if (!existsSync(`${SKILL}/crew.mjs`)) bad(`${SKILL}/crew.mjs is missing (it fetches the crew's briefs for the skill): copy templates/local/ from the crew`);
+  else if (spawnSync(process.execPath, ['--check', `${SKILL}/crew.mjs`]).status === 0) ok(`${SKILL}/crew.mjs`);
+  else bad(`${SKILL}/crew.mjs doesn't parse: copy it again from templates/local/`);
+  if (spawnSync('git', ['check-ignore', '-q', `${SKILL}/SKILL.md`]).status === 0) warn(`${SKILL}/ is ignored by git here: the skill works on this machine, but isn't shared with the repo`);
+  if (!config) warn('The skill renders the briefs from crew.json: fix it above first');
+  if (!origin.trim()) warn('No `origin` remote: the skill ends with a local branch instead of a pull request');
+  for (const [tool, why] of [['claude', 'the skill runs in Claude Code (https://claude.com/claude-code)'], ['gh', 'the skill opens the pull request with it']]) {
+    if (spawnSync(tool, ['--version'], { stdio: 'ignore' }).status !== 0) warn(`\`${tool}\` isn't installed on this machine: ${why}`);
+  }
+}
+
 // --- GitHub: secrets, labels, variables -----------------------------------------------------------
 if (github) {
   section('On GitHub');

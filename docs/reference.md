@@ -186,6 +186,32 @@ HQ's Setup view (Runners) decides where runs go: a repo moved as a whole runs ev
 and only there (HQ then starts what the repo's thin callers used to, so they can be deleted), and for the
 other repos each agent has a share of runs that try a sandbox and fall back to Actions.
 
+## The crew on your machine
+
+`templates/local/` is a Claude Code skill, installed as `.claude/skills/crew/`: `SKILL.md` and one helper,
+`crew.mjs`. `/crew <what to build>` runs Nova, Bolt, Iris and Patch in the person's own checkout, with no
+HQ and no workflow.
+
+- **The briefs stay the source.** `crew.mjs prepare` does what the setup action does: it fetches the crew
+  at `v1` (or `CREW_REF`, from `CREW_REPO`; `CREW_DIR` uses a local checkout), copies `scripts/`,
+  `briefs/` and `scout/` into `.crew/`, adds `.crew/` and `agent-out/` to `.git/info/exclude`, and runs
+  `render.mjs`. Offline, it reuses the last copy.
+- **Each agent is a subagent** of the Claude Code session, told to follow `.crew/briefs/<AGENT>.md` with
+  the local stand-ins for what HQ and the workflow provide: the values of the brief's environment
+  variables (the task and the person's notes are files in `agent-out/`; the mock "link" is a file there),
+  no `hq.mjs` calls, and, with no pull request yet, `git diff <base>...HEAD` and `agent-out/review.json`
+  where the briefs use `gh pr diff` and the PR's reviews. The session does the workflow's part: it
+  commits (as the person, never as the HQ App), keeps each mock version, runs the repo's checks, and adds
+  Patch's lesson to `LESSONS.md`. `crew.mjs guard` refuses an agent's change under `.github/`, `.crew/`,
+  `.claude/` or to an `.env*` file.
+- **The person decides** three times: on the mock (approve, or notes for another version), on the built
+  branch (changes go to Patch as a `request`), and before the push that opens the pull request. The
+  branch is `crew/<name>`, never the default branch, and nothing is merged. A pull request whose last
+  review still asks for changes is opened as a draft. Because the branch is not `agent/*`, the repo's own
+  Iris reviews the pull request on GitHub as she does any other.
+- Not included: Scout and Rocket, Nova's redesign of an open PR, Bolt's `check` mode, and Patch's
+  `conflicts` and `qa` reasons. The agents use the model of the Claude Code session.
+
 ## What a repo provides
 
 `.github/agents/crew.json`:
@@ -239,6 +265,8 @@ other repos each agent has a share of runs that try a sandbox and fall back to A
 - Secrets `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) on the repo or its organization, passed to the
   crew by name (see Access), and the label `scout`. With Agent HQ: the variable `AGENT_HQ_URL`, the label
   `agent`, the HQ GitHub App installed, and branch protection on `main`.
+
+- `.claude/skills/crew/`: the `/crew` skill (above). It holds no copy of the briefs.
 
 Starters for all of these are in `templates/`, and `scripts/setup/check.mjs` checks a repo has them.
 
