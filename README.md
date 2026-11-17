@@ -1,16 +1,23 @@
 # Agent Crew
 
-A crew of AI agents that works on your GitHub repo: one reviews every pull request, one tests it in a
-real browser, one labels how risky it is. They run on GitHub Actions, in your repo, on your own Claude
-account. Your repo keeps a few small files; the crew itself lives here and updates for everyone at once.
+A crew of seven AI agents that works on your GitHub repo. Between them they design a change, build it,
+review it, fix it, test it in a real browser and ship it. They run on GitHub Actions, in your repo, on
+your own Claude account. Your repo keeps a few small files; the crew itself lives here and updates for
+everyone at once.
 
-| | Agent | What it does | Runs when |
+| | Agent | Its job | Runs |
 | --- | --- | --- | --- |
-| 🔎 | **Iris** | Reviews the PR and leaves comments with a verdict | Every PR, or comment `/iris` |
-| 🧭 | **Scout** | Tests the PR like a user, in a browser, and posts what passed and failed | Label a PR `scout`, or comment `/scout` |
-| 📡 | **Radar** | Labels each PR's impact (`impact:low` to `impact:critical`), no AI | Every PR |
-| 💓 | **Probe** | Checks your live site is up, no AI | Every 15 minutes |
-| 🎨 ⚡ 🩹 🚀 | **Nova, Bolt, Patch, Rocket** | Design a mock, build it, fix what review and testing found, ship the release | From [Agent HQ](#agent-hq) |
+| <img src="docs/crew/nova.svg" width="40" alt=""> | **Nova**<br>designer | Turns a request into a clickable HTML mock in your app's own look, and revises it from your notes until you approve the direction. Nothing is built before that. | From Agent HQ |
+| <img src="docs/crew/bolt.svg" width="40" alt=""> | **Bolt**<br>builder | Builds the approved mock on its own branch: writes the code and its tests, runs your lint, type-check and test commands, and opens a pull request. | From Agent HQ |
+| <img src="docs/crew/iris.svg" width="40" alt=""> | **Iris**<br>reviewer | Reads every pull request's diff against your conventions and comments on bugs, risky changes and missing tests, with a verdict and an impact label. She only comments; she never approves or merges. | On its own: every PR, or comment `/iris` |
+| <img src="docs/crew/patch.svg" width="40" alt=""> | **Patch**<br>fixer | Fixes what the others found, on the PR's own branch: Iris's review comments, the flows Scout saw fail, a broken build, merge conflicts. Up to three rounds with Iris. | From Agent HQ |
+| <img src="docs/crew/scout.svg" width="40" alt=""> | **Scout**<br>tester | Starts your app on emulators, opens it in a real browser and tests the PR the way a user would: your core journeys plus flows it writes for this change. Posts what passed and failed, with screenshots and video. | On its own: label a PR `scout`, or comment `/scout` |
+| <img src="docs/crew/rocket.svg" width="40" alt=""> | **Rocket**<br>release | Lands the finished PRs into a release branch one at a time, runs your checks after each, resolves conflicts between them, and leaves out any PR it can't make work, with the reason. | From Agent HQ |
+| <img src="docs/crew/radar.svg" width="40" alt=""> | **Radar**<br>analyst | Labels every PR's impact (`impact:low` to `impact:critical`) from your risk map, with no AI. On request it audits the repo for major upgrades, security advisories and cleanup. It proposes; it never changes code. | On its own: every PR; audits by hand |
+
+Three of the crew work **on their own** in any repo you set up: Iris, Scout and Radar. The other four are
+started by [Agent HQ](#agent-hq), the dashboard that runs the whole line from request to release. There
+is also a **production probe**: a few read-only checks against your live site every 15 minutes, no AI.
 
 No agent can merge. Reviews are comments, and landing a PR stays with a person.
 
@@ -48,10 +55,21 @@ Starters for every one of these are in [`templates/`](templates), and
 
 ## Agent HQ
 
-Agent HQ is the dashboard for the whole crew: you write a mission, Nova sketches it, you approve, Bolt
+Agent HQ is the dashboard for the whole crew. You write a mission; Nova sketches it, you approve, Bolt
 builds it, Iris and Scout check it, Patch fixes what they find, and Rocket lands the finished PRs in a
-release. It shows every mission, who is on it and what needs you. HQ is a separate product, set up for
-each team on its own accounts. The crew in this repo is free and works without it.
+release. It shows every mission, who is on it and what needs you.
+
+**[Try the demo → agent-hq-demo.vercel.app](https://agent-hq-demo.vercel.app)**: the whole dashboard with
+made-up repos and missions. No account needed, nothing is connected, and a reload starts over.
+
+[![The missions board: every mission, who is on it, and what needs you](docs/hq/board.png)](https://agent-hq-demo.vercel.app)
+
+| Approve Nova's mock before anything is built | Watch what Scout did, step by step | See every release Rocket shipped |
+| --- | --- | --- |
+| [![Nova's mock, with versions and a notes box](docs/hq/mock.png)](docs/hq/mock.png) | [![Scout's evidence for a failed flow: steps to reproduce and screenshots](docs/hq/evidence.png)](docs/hq/evidence.png) | [![A year of release trains per repo](docs/hq/releases.png)](docs/hq/releases.png) |
+
+HQ is a separate product, set up for each team on its own accounts. The crew in this repo is free and
+works without it.
 
 With an HQ, set the repo or organization variable `AGENT_HQ_URL` to its address and copy
 `templates/hq/`. Without that variable a run talks only to GitHub and Claude.
