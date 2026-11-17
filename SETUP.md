@@ -257,7 +257,7 @@ Then make these match your app. Each has a `TODO` where it needs you:
 
 | File | What to do |
 | --- | --- |
-| `.github/agents/crew.json`, `scout` | `port` and `readyPath` (a page that answers once the app is up), `warm` (pages to compile first), `env` (variables the app needs to start, **dummy values only**), `firebaseRules` (`true` when the repo has `firestore.rules`), `blockHosts` (third-party hosts the app must not reach). |
+| `.github/agents/crew.json`, `scout` | `port` and `readyPath` (a page that answers once the app is up), `warm` (pages to compile first), `env` (variables the app needs to start, **dummy values only**), `firebaseRules` (`true` when the repo has `firestore.rules`), `blockHosts` (third-party hosts the app must not reach). A third party a flow can't do without gets a fake service instead: `.github/scout/fakes/<name>.json`, or Agent HQ's Fakes page (`docs/reference.md`, Fake services). |
 | `scripts/scout/seed.mjs` | The accounts and the little data a signed-in user needs. |
 | `e2e/scout/_support/scout.ts` | `loginAs`: the selectors of your sign-in page, and what shows once signed in. |
 | `e2e/scout/core/smoke.spec.ts` | Keep it to "the app loads" and "the seeded user signs in". |

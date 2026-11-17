@@ -342,6 +342,12 @@ jobs:
             case "$(basename "$f")" in "pr-$PR_NUMBER-"*) ;; *) echo "[Scout] Leaving out $f (another PR's flow)"; rm -rf "$f" ;; esac
           done
 
+      # The repo's fake services (Agent HQ's Fakes page): stand-ins for the third parties the app calls.
+      # start-env.sh runs them, with the repo's own .github/scout/fakes/*.json laid over them by name.
+      - name: Pull the fake services from HQ
+        continue-on-error: true
+        run: node .crew/scripts/agents/hq.mjs fakes-pull scout-out/fakes/hq
+
       - name: Start the app on emulators
         run: bash .crew/scripts/scout/start-env.sh
 

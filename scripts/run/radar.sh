@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # Radar in a sandbox: `.github/workflows/agent-radar.yml`'s jobs as one script. See common.sh for the
-# environment. PARAMS: { mode: triage|study|audit|label, mission_id, task, report_url, scope, pr_number }.
+# environment. PARAMS: { mode: triage|study|audit|label|fake, mission_id, task, report_url, scope, pr_number, fake_id, service }.
 #   label    the impact label on a PR from .github/agents/risk-map.json (no AI, seconds); HQ sends it on
 #            the repo's PR events once the repo's agents are off GitHub Actions
 #   triage   the impact of a new HQ mission before it's built
 #   study    a question asked in HQ: a written report and findings
 #   audit    the weekly or monthly audit (`scope`): ideas to HQ's inbox; HQ's tick starts it on schedule
+#   fake     a fake service for Scout's tests, drafted from how the code calls the real one (`service`,
+#            with the owner's notes in `task`); goes to HQ's Fakes page as `fake_id`
 # (The daily "is main due for a regression run?" check lives in HQ itself for these repos: it reads HQ's
 # own record of the last run, where the workflow read GitHub's run list.)
 AGENT=radar
 cd "$(dirname "$0")/../../.." && . .crew/scripts/run/common.sh
 
 MODE=$(param mode); MODE="${MODE:-triage}"
-case "$MODE" in label|triage|study|audit) ;; *) die "Unknown mode '$MODE'" ;; esac
+case "$MODE" in label|triage|study|audit|fake) ;; *) die "Unknown mode '$MODE'" ;; esac
 mkdir -p radar-out
 crew_render
 
@@ -37,6 +39,40 @@ fi
 MODEL=$(pick_model claude-sonnet-5-5)
 RADAR_TASK=$(param task)
 export RADAR_MODE="$MODE" RADAR_TASK
+
+if [ "$MODE" = fake ]; then
+  FAKE_ID=$(param fake_id)
+  [ -n "$FAKE_ID" ] || die "fake needs fake_id"
+  export RADAR_SERVICE="$(param service)"
+  [ -n "$RADAR_SERVICE" ] || die "fake needs the service's name"
+  # HQ shows the draft as running until it hears back, so a run that dies says so.
+  FAKE_SENT=""
+  fake_finish() {
+    local code=$?
+    if [ "$code" -ne 0 ] && [ -z "$FAKE_SENT" ] && ! dry_run; then node "$HQ_MJS" fake-fail "$FAKE_ID" "${FAIL_REASON:-The Radar run failed before it sent a draft. See $RUN_URL}" || true; fi
+    (exit "$code"); finish
+  }
+  trap fake_finish EXIT
+  PROMPT='Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: fake.
+The service is in the environment variable RADAR_SERVICE; what the owner added, if anything, is in RADAR_TASK.'
+  if dry_run; then
+    jq -n --arg n "$(tr '[:upper:]' '[:lower:]' <<<"$RADAR_SERVICE" | tr -c 'a-z0-9\n' '-')" '{name:$n,routes:[]}' > radar-out/fake.json
+  else
+    run_claude fake "$PROMPT" "$MODEL" 120 Bash,Read,Glob,Grep,Write,WebFetch
+  fi
+  test -s radar-out/fake.json || { FAIL_REASON="Radar didn't write a definition (radar-out/fake.json). See $RUN_URL"; die "$FAIL_REASON"; }
+  if ! node .crew/scripts/scout/fakes.mjs check radar-out/fake.json 2> radar-out/fake-problems.txt; then
+    cat radar-out/fake-problems.txt
+    FAIL_REASON="Radar's definition can't run: $(tr '\n' ' ' < radar-out/fake-problems.txt | head -c 300)"
+    die "$FAIL_REASON"
+  fi
+  cat radar-out/fake-problems.txt
+  if dry_run; then say "DRY_RUN: would send the $(jq -r .name radar-out/fake.json) fake"; exit 0; fi
+  node "$HQ_MJS" fake-post "$FAKE_ID" radar-out/fake.json
+  FAKE_SENT=1
+  say "Done."
+  exit 0
+fi
 
 if [ "$MODE" = triage ]; then
   [ -n "$MISSION_ID" ] || die "triage needs mission_id"

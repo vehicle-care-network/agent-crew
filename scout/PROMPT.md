@@ -10,6 +10,13 @@ trust without re-testing it themselves.
   `demo-scout`. Nothing you do can reach staging or production, and no third-party keys exist (Stripe,
   Twilio, Resend, Google), so those integrations fail. Treat a failure that is only "the integration has
   no key" as expected, and say so rather than reporting it as a bug.
+- **Fake services**, when this repo has any: local stand-ins for third parties (listed in
+  `scout-out/fakes/plan.json`, with each one's address; no file means none). The app is already pointed
+  at them, so a flow through one works and must be tested like any other; "no key" is not an excuse
+  for a service that has a fake. `.crew/scout/FAKES.md` says how to read what the app asked a fake
+  (`GET <address>/__fake/requests`), seed its state, and send one of its webhooks to the app. A fake
+  answers `501` to a call it has no route for: that is a gap in the fake, not a bug in the app. Say so
+  in `summary.md` under **Not covered**, with the method and path, so someone adds the route.
 - The base seed (`scripts/scout/seed.mjs`) and this repo's test helpers, described below under "This repo".
 - A Playwright MCP browser (`mcp__playwright__*`) for exploring the app before you write tests.
 
@@ -141,7 +148,7 @@ only hide a failure, say so and leave the check in.
   `coverage`, the **Committed spec** column of `.github/scout/core-flows.md`).
 - Never touch `e2e/scout/probe/`: those run against production, on their own schedule.
 - Do not commit, push, or comment on the PR. The workflow posts your summary with the test results.
-- Do not try to reach any URL other than `$SCOUT_BASE_URL` and the local emulators.
+- Do not try to reach any URL other than `$SCOUT_BASE_URL`, the local emulators and the local fakes.
 - If the app does not start or the base smoke tests fail, stop and say so in `summary.md`. Results
   after that point would not mean anything.
 

@@ -175,6 +175,9 @@ for f in e2e/scout/pr-* e2e/scout/_seed/pr-*; do
   case "$(basename "$f")" in "pr-$NUMBER-"*) ;; *) say "Leaving out $f (another PR's flow)"; rm -rf "$f" ;; esac
 done
 
+# The repo's fake services from HQ, while the run still has its credentials; start-env.sh runs them.
+dry_run || node "$HQ_MJS" fakes-pull "$SCOUT_OUT/fakes/hq" >/dev/null
+
 # ---- Start the app on emulators. The app under test never sees the run's credentials.
 env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
   bash .crew/scripts/scout/start-env.sh

@@ -4,6 +4,12 @@
 # production: demo-* projects exist only inside the emulator, the apps use the emulator whenever the
 # emulator hosts are set, and no third-party keys are provided, so those integrations fail closed.
 #
+# A third party the app can't do without in a test gets a fake (scripts/scout/fakes.mjs): a local stand-in
+# that answers the calls the app makes. Definitions come from Agent HQ's Fakes page (pulled into
+# $SCOUT_OUT/fakes/hq/ before this script, by `hq.mjs fakes-pull`) and from the repo's own
+# .github/scout/fakes/<name>.json, which wins by name. Each fake's variables go into .env.local after the
+# repo's, and the real hosts it replaces are blocked on CI like `blockHosts`.
+#
 # Repo settings come from .github/agents/crew.json, key "scout":
 #   port        the port the app must run on (some apps hard-code their own origin)
 #   readyPath   a path that answers once `next dev` is up (e.g. "/login" or "/")
@@ -11,6 +17,7 @@
 #   env         extra env vars the app needs, dummy values only
 #   firebaseRules  true when the repo has firestore.rules the emulator should load
 #   blockHosts  hostnames to blackhole on CI (endpoints that need no key must still be unreachable)
+#   fakesPort   the first fake's port (default 4600); each next fake, by name, takes the next port
 # The repo provides scripts/scout/seed.mjs (base seed) and scripts/scout/fixtures.mjs (guarded helpers).
 #
 # Usage: .crew/scripts/scout/start-env.sh      (from the repo root)
@@ -27,6 +34,9 @@ FS_PORT="${SCOUT_FS_PORT:-8080}"
 AUTH_PORT="${SCOUT_AUTH_PORT:-9099}"
 READY_PATH="$(cfg readyPath)"
 mkdir -p "$OUT"
+# The fakes this run uses, each with its port, written to $OUT/fakes/plan.json.
+fakes() { SCOUT_OUT="$OUT" node "$(dirname "$0")/fakes.mjs" "$@"; }
+SCOUT_APP_URL="http://localhost:${APP_PORT}" SCOUT_FAKES_PORT="${SCOUT_FAKES_PORT:-$(cfg fakesPort)}" fakes plan
 
 if [ -f .env.local ] && ! grep -q '^# scout-env' .env.local; then
   echo "[ScoutEnv] .env.local already exists and was not written by Scout; refusing to overwrite it." >&2
@@ -50,6 +60,8 @@ NEXT_TELEMETRY_DISABLED=1
 EOF
   # The repo's own variables; APP_PORT is substituted so origins follow the chosen port.
   cfg env | sed "s/\${APP_PORT}/${APP_PORT}/g"
+  # Last, so a fake's address wins over a dummy the repo set for the same variable.
+  fakes env
 } > .env.local
 
 if [ "$(cfg firebaseRules)" = true ]; then
@@ -82,8 +94,9 @@ wait_for() { # url, label, log, seconds
   exit 1
 }
 
-hosts="$(cfg blockHosts)"
-if [ -n "${CI:-}" ] && [ -n "$hosts" ]; then
+# The real services behind the fakes are blocked too: a call that slips past a fake must fail, not book.
+hosts="$(cfg blockHosts) $(fakes hosts)"
+if [ -n "${CI:-}" ] && [ -n "${hosts// /}" ]; then
   # The block is runner-wide (/etc/hosts), so it would also cut off Scout itself: the evidence manifest is
   # how HQ learns the verdict (a blocked HQ leaves the mission "Scout is testing" forever), and Scout's own
   # agent talks to api.anthropic.com (blocked, every run dies with ECONNREFUSED before testing). Never block
@@ -104,6 +117,14 @@ if [ -n "${CI:-}" ] && [ -n "$hosts" ]; then
     echo "[ScoutEnv] Blocking on this runner:${keep}"
     for h in $keep; do echo "0.0.0.0 $h"; done | sudo tee -a /etc/hosts >/dev/null
   fi
+fi
+
+fake_urls="$(fakes urls)"
+if [ -n "$fake_urls" ]; then
+  set -m
+  fakes serve > "$OUT/fakes.log" 2>&1 &
+  echo $! > "$OUT/fakes.pid"
+  for u in $fake_urls; do wait_for "$u" "Fake at ${u%/__fake/health}" "$OUT/fakes.log" 20; done
 fi
 
 # firebase-tools 15 needs Java 21+. With an older JDK locally, override: SCOUT_FIREBASE="npx --yes firebase-tools@13.35.1"

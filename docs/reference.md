@@ -247,6 +247,9 @@ HQ and no workflow.
   testing, HQ records a QA error). The script skips both with a warning if a repo lists them anyway. To
   keep the app under test from calling Claude, leave `ANTHROPIC_API_KEY` out of `scout.env`: Scout's
   environment never sets it.
+- `scout.fakesPort` (optional): the first fake service's port, 4600 when left out.
+- `.github/scout/fakes/<name>.json` (optional): the repo's own definition of a fake service, which
+  replaces Agent HQ's of the same name on that branch. See [Fake services](#fake-services).
 - `.github/agents/<AGENT>.notes.md` (NOVA, BOLT, IRIS, PATCH, RADAR, SCOUT, ROCKET): the repo's own additions to a
   brief, inserted under "This repo". Keep them short and concrete: conventions the linter can't catch,
   what Scout can log in as, what it can't test here.
@@ -269,6 +272,30 @@ HQ and no workflow.
 - `.claude/skills/crew/`: the `/crew` skill (above). It holds no copy of the briefs.
 
 Starters for all of these are in `templates/`, and `scripts/setup/check.mjs` checks a repo has them.
+
+## Fake services
+
+Scout starts the app with no third-party keys and with those hosts blocked, so a flow that depends on
+one (a booking through Nylas, a payment through Stripe) can't run. A fake service is a local stand-in:
+one JSON definition of the routes it answers, the environment variables that point the app at it, the
+real hosts it replaces and the webhooks it can send. `scripts/scout/fakes.mjs` runs every fake, each on
+its own port (4600, 4601… by name); nothing in the crew knows any particular service, so a new one is a
+new definition and no code. The format is in [`scout/FAKES.md`](../scout/FAKES.md).
+
+- **Where definitions come from.** Agent HQ's Fakes page keeps them per repo. You name a service there
+  and Radar (mode `fake`) reads the code for every call the app makes to it, the variables that point at
+  it, and the webhooks and redirects that come back, and drafts the definition; you change anything you
+  like afterwards. A repo's `.github/scout/fakes/<name>.json` replaces HQ's definition of that name on
+  the branch that has it, and is all a repo without an HQ uses.
+- **In a run.** Before the app starts, Scout pulls the repo's fakes (`hq.mjs fakes-pull`), and
+  `start-env.sh` lays the repo's files over them, starts the server, appends each fake's variables to
+  `.env.local` after `scout.env`, and adds the fakes' real hosts to the blocked list. Every call is
+  recorded in `scout-out/fakes/requests.ndjson`, and a call no route answers gets `501`, which Scout
+  reports as a gap in the fake.
+- **What the app must allow.** The address it calls has to come from the environment. Where it is a
+  constant, Radar lists the change under the definition's `needs`, and HQ offers it to Bolt as a mission.
+
+`node --test scripts/scout/fakes.test.mjs` runs the server's tests.
 
 ## Models
 

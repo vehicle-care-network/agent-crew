@@ -3,6 +3,18 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## Unreleased
+
+- **Fake services for Scout.** A flow that depends on a third party (Nylas, Stripe, Twilio) can be tested
+  without a key: a fake is one JSON definition of the routes it answers, the variables that point the app
+  at it, the real hosts it replaces and the webhooks it sends, and `scripts/scout/fakes.mjs` runs them all
+  on local ports. Definitions come from Agent HQ's Fakes page (`hq.mjs fakes-pull`) and from the repo's
+  `.github/scout/fakes/<name>.json`, which wins by name. `start-env.sh` starts them, sets their variables
+  and blocks their real hosts. The format is in `scout/FAKES.md`.
+- **Radar drafts a fake from the code** (mode `fake`, started from HQ's Fakes page): the calls the app
+  makes, where its address comes from, the webhooks and redirects that come back, and the changes the app
+  needs first. Needs an HQ with the Fakes page.
+
 ## 1.10.0
 
 - **The crew runs without Agent HQ.** With no `AGENT_HQ_URL` variable, Iris, Scout, Radar's labels and the
