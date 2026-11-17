@@ -93,6 +93,39 @@ crew_render() {
     fi
   fi
   node .crew/scripts/setup/render.mjs
+  use_node
+}
+# The repo's Node (.nvmrc, else crew.json "node"), as setup-node gives a workflow. A sandbox image carries
+# one Node, and a newer one's npm can refuse a lockfile the repo's own Node accepts ("npm ci can only
+# install packages when your package.json and package-lock.json are in sync"). When the major differs,
+# the repo's is fetched from nodejs.org (checksum verified), kept under ~/.cache, and put first on PATH
+# for everything the script runs after this. If it can't be fetched, the run goes on with what is there.
+use_node() {
+  local want have os arch dir base sum file
+  want=$( { cat .nvmrc 2>/dev/null || jq -r '.node // empty' .github/agents/crew.json 2>/dev/null; } | head -1 | tr -d 'v[:space:]')
+  want="${want%%.*}"
+  [[ "$want" =~ ^[0-9]+$ ]] || return 0
+  have=$(node -p 'process.versions.node.split(".")[0]')
+  [ "$have" != "$want" ] || return 0
+  os=$(uname -s | tr '[:upper:]' '[:lower:]')
+  case "$(uname -m)" in x86_64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) arch="" ;; esac
+  dir="$HOME/.cache/hq-node/$want"
+  if [ ! -x "$dir/bin/node" ]; then
+    base="https://nodejs.org/dist/latest-v${want}.x"
+    read -r sum file < <(curl -fsSL "$base/SHASUMS256.txt" 2>/dev/null | grep -E " node-v[0-9.]+-${os}-${arch}\.tar\.gz\$") || true
+    if [ -z "${file:-}" ] || ! curl -fsSL "$base/$file" -o "/tmp/$file"; then
+      warn "This repo wants Node $want and the runner has $have; couldn't fetch Node $want, going on with $have"
+      return 0
+    fi
+    if [ "$( (sha256sum "/tmp/$file" 2>/dev/null || shasum -a 256 "/tmp/$file") | cut -d' ' -f1)" != "$sum" ]; then
+      rm -f "/tmp/$file"
+      die "The Node $want download doesn't match its published checksum"
+    fi
+    rm -rf "$dir" && mkdir -p "$dir" && tar -xzf "/tmp/$file" -C "$dir" --strip-components=1 && rm -f "/tmp/$file"
+  fi
+  export PATH="$dir/bin:$PATH"
+  hash -r
+  say "Using Node $(node --version) (npm $(npm --version)): this repo's version; the runner has $have"
 }
 crew_cmd() { jq -r --arg k "$1" '.commands[$k] // empty' .github/agents/crew.json; }
 install_deps() { say "Installing dependencies"; bash -c "$(crew_cmd install)"; }
