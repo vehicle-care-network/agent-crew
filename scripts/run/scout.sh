@@ -158,7 +158,17 @@ if [ "$SCOUT_MODE" = pr ]; then
 fi
 
 say "Installing Playwright's Chromium"
-npx playwright install --with-deps chromium >"$SCOUT_OUT/playwright-install.log" 2>&1 || { tail -20 "$SCOUT_OUT/playwright-install.log"; die "Couldn't install Chromium"; }
+chromium_install() { npx playwright install --with-deps chromium >"$SCOUT_OUT/playwright-install.log" 2>&1; }
+if ! chromium_install; then
+  # A Playwright release only has browsers for the systems that existed when it came out, so the repo's
+  # pinned one can be older than this runner's OS ("Playwright does not support chromium on ..."). The
+  # current release is tried in its place, for this run only: the repo's package.json is not touched.
+  tail -5 "$SCOUT_OUT/playwright-install.log"
+  warn "Playwright $(npx playwright --version 2>/dev/null | tr -cd '0-9.') (this repo's) couldn't install Chromium on this runner; trying the current Playwright for this run"
+  npm i --no-save --no-audit --no-fund @playwright/test@latest >/dev/null || die "Couldn't install Chromium, nor a newer Playwright to try"
+  chromium_install || { tail -20 "$SCOUT_OUT/playwright-install.log"; die "Couldn't install Chromium, with this repo's Playwright or with $(npx playwright --version 2>/dev/null)"; }
+  say "Using $(npx playwright --version) for this run"
+fi
 
 # ---- Re-runs start from the specs Scout already wrote for this PR (kept by HQ), instead of from scratch.
 REUSED=false
