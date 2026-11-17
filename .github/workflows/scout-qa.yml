@@ -418,7 +418,11 @@ jobs:
         if: always() && steps.scout.outputs.execution_file != ''
         env:
           HAS_SUBSCRIPTION_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
-        run: node .crew/scripts/agents/usage.mjs "${{ steps.scout.outputs.execution_file }}" scout "${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'coverage' && 'coverage' || env.SCOUT_MODE == 'smoke' && 'smoke' || 'qa' }}" "${{ env.MISSION_ID }}" "${{ steps.pr.outputs.number }}"
+          # Through the environment, never pasted into the script: the mission id and PR number come from the request.
+          EXECUTION_FILE: ${{ steps.scout.outputs.execution_file }}
+          USAGE_TASK: ${{ env.SCOUT_MODE == 'regression' && 'regression' || env.SCOUT_MODE == 'coverage' && 'coverage' || env.SCOUT_MODE == 'smoke' && 'smoke' || 'qa' }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: node .crew/scripts/agents/usage.mjs "$EXECUTION_FILE" scout "$USAGE_TASK" "$MISSION_ID" "$PR_NUMBER"
 
       # The comment's pass/fail comes from this run, not from the agent's own runs: every spec, core and
       # PR-specific, is executed once more against the final state of the tests. A re-run of named flows
