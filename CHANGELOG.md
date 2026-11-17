@@ -3,6 +3,15 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.11.4
+
+- **Scout in a sandbox: a repo's Playwright older than the runner's OS.** A Playwright release has
+  browsers only for the systems of its day, so a repo pinned to an older one failed every Scout run
+  with "Playwright does not support chromium on ..." once the sandbox image moved to a newer OS. When
+  the repo's Playwright can't install Chromium, the run now takes the current Playwright (in
+  `node_modules` only, for that run) and says so in the log. Bumping `@playwright/test` in the repo
+  removes the warning.
+
 ## 1.11.3
 
 - **A fake's variables reach the app.** `start-env.sh` wrote the first fake's variable onto the end of the
