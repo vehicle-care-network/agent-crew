@@ -60,6 +60,8 @@ NEXT_TELEMETRY_DISABLED=1
 EOF
   # The repo's own variables; APP_PORT is substituted so origins follow the chosen port.
   cfg env | sed "s/\${APP_PORT}/${APP_PORT}/g"
+  # `cfg` ends without a newline: without this one, the first fake's variable is glued onto the repo's last.
+  echo
   # Last, so a fake's address wins over a dummy the repo set for the same variable.
   fakes env
 } > .env.local
