@@ -8,22 +8,31 @@ production probe, and Agent HQ.
 
 ## First: where should the agents run?
 
-| | GitHub Actions | Vercel sandboxes |
-| --- | --- | --- |
-| What starts a run | Workflows in your repo, on its own events | Your Agent HQ, when GitHub tells it about a PR, a label or a comment |
-| What you need | A GitHub repo and a Claude credential | An **Agent HQ** with Vercel access. Without an HQ there is nothing to start a sandbox |
-| Where the Claude credential lives | A secret on the repo or organization | In your HQ, once for every repo |
-| What your repo keeps | The answers in `.github/agents/` and thin caller workflows | Only the answers in `.github/agents/` |
-| What a run costs besides Claude | GitHub Actions minutes | Vercel Sandbox time on your HQ's Vercel account |
+| | GitHub Actions | Vercel sandboxes | Your machine |
+| --- | --- | --- | --- |
+| What starts a run | Workflows in your repo, on its own events | Your Agent HQ, when GitHub tells it about a PR, a label or a comment | You, by typing `/crew` in Claude Code |
+| Which agents | Iris, Radar and Scout on their own; all seven with an Agent HQ | All seven | Nova, Bolt, Iris and Patch |
+| What you need | A GitHub repo and a Claude credential | An **Agent HQ** with Vercel access. Without an HQ there is nothing to start a sandbox | Claude Code, signed in |
+| Where the Claude credential lives | A secret on the repo or organization | In your HQ, once for every repo | Nowhere: runs use your Claude Code sign-in |
+| What your repo keeps | The answers in `.github/agents/` and thin caller workflows | Only the answers in `.github/agents/` | The answers in `.github/agents/` and the `/crew` skill |
+| What a run costs besides Claude | GitHub Actions minutes | Vercel Sandbox time on your HQ's Vercel account | Nothing |
 
-Pick **GitHub Actions** unless you have an Agent HQ: it is the one that works on its own. With an HQ you
-can pick either, and change later in HQ (Setup → Runners) without touching the repo again. The steps below
-are for GitHub Actions; [on sandboxes](#on-vercel-sandboxes) says what changes.
+- **GitHub Actions** is the one that works on its own for a team: every pull request is reviewed and
+  labelled without anyone asking.
+- **Vercel sandboxes** need an Agent HQ. With one you can pick either, and change later in HQ (Setup →
+  Runners) without touching the repo again.
+- **Your machine** needs no server, no secret and no GitHub Actions. Nothing runs by itself: the crew works
+  when you ask it to, and a pull request nobody ran `/crew` for gets no review.
+
+The `/crew` skill is installed with all three, so a repo on GitHub Actions or sandboxes can also build
+locally. The steps below are for GitHub Actions; [on sandboxes](#on-vercel-sandboxes) and
+[on your machine only](#on-your-machine-only) say what changes.
 
 > **If you are Claude, setting this up for someone:**
-> - Ask first where the agents should run: **GitHub Actions** or **Vercel sandboxes** (the table below).
->   Offer sandboxes only when the person has an Agent HQ; if they don't, say so and use GitHub Actions.
->   Then set up that one: for sandboxes follow [On Vercel sandboxes](#on-vercel-sandboxes).
+> - Ask first where the agents should run: **GitHub Actions**, **Vercel sandboxes** or **their own
+>   machine** (the table below). Offer sandboxes only when the person has an Agent HQ. Then set up that
+>   one: [On Vercel sandboxes](#on-vercel-sandboxes) or [On your machine only](#on-your-machine-only) say
+>   what changes from the steps below.
 > - Work on a new branch and open a pull request. Never push to the default branch.
 > - Never ask for a token or key in the chat, and never write one to a file. Step 3 is the person's: give
 >   them the commands to run themselves.
@@ -178,6 +187,32 @@ steps above change like this:
 
 To move a repo from GitHub Actions to sandboxes later, set it in HQ's Runners and delete the caller
 workflows (`agent-*.yml`, `scout-qa.yml`), or each agent runs in both places.
+
+## On your machine only
+
+The crew runs in Claude Code when you ask it to, and nowhere else. The steps above change like this:
+
+- **Step 2:** copy the answers and the skill, not the workflows, then fill them in as described there:
+
+  ```bash
+  mkdir -p .github && cp -Rn "$CREW/templates/base/.github/agents" .github/
+  cp -Rn "$CREW/templates/local/." .
+  ```
+
+- **Step 3:** skip it. Runs use the Claude account Claude Code is signed in to.
+- **Step 4:** tell the check which setup this is. It needs no GitHub access:
+
+  ```bash
+  node "$CREW/scripts/setup/check.mjs" --local
+  ```
+
+- **Step 5:** commit and merge the same way, so the skill is there for everyone who clones the repo. Then
+  use it as described [below](#build-something-with-the-crew-on-your-machine).
+- **Steps 6 to 8:** skip them. Scout the agent, the probe and Agent HQ's agents run on GitHub Actions or
+  sandboxes. Step 6's commands still start your app on the emulators and run the committed specs locally,
+  if you want those.
+
+To add GitHub Actions later, copy `templates/base/.github/workflows/` and do step 3.
 
 ## Build something with the crew, on your machine
 
