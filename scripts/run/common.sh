@@ -95,37 +95,51 @@ crew_render() {
   node .crew/scripts/setup/render.mjs
   use_node
 }
-# The repo's Node (.nvmrc, else crew.json "node"), as setup-node gives a workflow. A sandbox image carries
-# one Node, and a newer one's npm can refuse a lockfile the repo's own Node accepts ("npm ci can only
-# install packages when your package.json and package-lock.json are in sync"). When the major differs,
-# the repo's is fetched from nodejs.org (checksum verified), kept under ~/.cache, and put first on PATH
-# for everything the script runs after this. If it can't be fetched, the run goes on with what is there.
+# The repo's Node, as setup-node gives a workflow: `.nvmrc`, else crew.json "node". Nothing here names a
+# version, a platform or an image: the version is the repo's, the build is the one nodejs.org publishes
+# for this machine (`uname`), and a runner that already has that major is left alone. A sandbox image
+# carries one Node, and a newer one's npm can refuse a lockfile the repo's own Node accepts ("npm ci can
+# only install packages when your package.json and package-lock.json are in sync").
+#   - "22" or "22.11": the latest release of that major. "22.11.0": exactly that release.
+#   - "lts/*", "latest", or nothing stated: the runner's Node stands.
+#   - NODE_DIST_URL (or nvm's NVM_NODEJS_ORG_MIRROR) names another place to fetch from.
+# The download is checked against its published SHA-256 and kept under ~/.cache/hq-node. When it can't
+# be fetched, or doesn't run here (no build for this platform, another libc), the run goes on with the
+# runner's Node and says so.
 use_node() {
-  local want have os arch dir base sum file
-  want=$( { cat .nvmrc 2>/dev/null || jq -r '.node // empty' .github/agents/crew.json 2>/dev/null; } | head -1 | tr -d 'v[:space:]')
-  want="${want%%.*}"
+  local spec want have os arch mirror base dir sum file
+  spec=$( { cat .nvmrc 2>/dev/null || jq -r '.node // empty' .github/agents/crew.json 2>/dev/null; } | head -1 | tr -d 'v[:space:]')
+  want="${spec%%.*}"
   [[ "$want" =~ ^[0-9]+$ ]] || return 0
   have=$(node -p 'process.versions.node.split(".")[0]')
   [ "$have" != "$want" ] || return 0
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
-  case "$(uname -m)" in x86_64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) arch="" ;; esac
-  dir="$HOME/.cache/hq-node/$want"
+  case "$(uname -m)" in x86_64|amd64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) arch=$(uname -m) ;; esac
+  mirror="${NODE_DIST_URL:-${NVM_NODEJS_ORG_MIRROR:-https://nodejs.org/dist}}"
+  mirror="${mirror%/}"
+  if [[ "$spec" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then base="$mirror/v$spec"; dir="$HOME/.cache/hq-node/$spec"; else base="$mirror/latest-v${want}.x"; dir="$HOME/.cache/hq-node/$want"; fi
   if [ ! -x "$dir/bin/node" ]; then
-    base="https://nodejs.org/dist/latest-v${want}.x"
+    local keep="going on with Node $have, which the runner has"
+    command -v curl >/dev/null 2>&1 || { warn "This repo asks for Node $spec; there is no curl to fetch it with, $keep"; return 0; }
     read -r sum file < <(curl -fsSL "$base/SHASUMS256.txt" 2>/dev/null | grep -E " node-v[0-9.]+-${os}-${arch}\.tar\.gz\$") || true
     if [ -z "${file:-}" ] || ! curl -fsSL "$base/$file" -o "/tmp/$file"; then
-      warn "This repo wants Node $want and the runner has $have; couldn't fetch Node $want, going on with $have"
+      warn "This repo asks for Node $spec; $base has no build for ${os}-${arch} (or can't be reached), $keep"
       return 0
     fi
     if [ "$( (sha256sum "/tmp/$file" 2>/dev/null || shasum -a 256 "/tmp/$file") | cut -d' ' -f1)" != "$sum" ]; then
       rm -f "/tmp/$file"
-      die "The Node $want download doesn't match its published checksum"
+      die "The Node $spec download from $base doesn't match its published checksum"
     fi
     rm -rf "$dir" && mkdir -p "$dir" && tar -xzf "/tmp/$file" -C "$dir" --strip-components=1 && rm -f "/tmp/$file"
+    if ! "$dir/bin/node" --version >/dev/null 2>&1; then
+      rm -rf "$dir"
+      warn "This repo asks for Node $spec; the build for ${os}-${arch} doesn't run on this runner, $keep"
+      return 0
+    fi
   fi
   export PATH="$dir/bin:$PATH"
   hash -r
-  say "Using Node $(node --version) (npm $(npm --version)): this repo's version; the runner has $have"
+  say "Using Node $(node --version) (npm $(npm --version)), as the repo asks; the runner has $have"
 }
 crew_cmd() { jq -r --arg k "$1" '.commands[$k] // empty' .github/agents/crew.json; }
 install_deps() { say "Installing dependencies"; bash -c "$(crew_cmd install)"; }

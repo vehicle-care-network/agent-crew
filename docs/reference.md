@@ -239,7 +239,7 @@ HQ and no workflow.
 }
 ```
 
-- `node` is used when the repo has no `.nvmrc`. On GitHub Actions `setup-node` installs it; in a sandbox the run fetches that major from nodejs.org when the image's Node differs (`use_node` in `scripts/run/common.sh`). `commands` are run with `bash -c` from the repo root.
+- `node` is used when the repo has no `.nvmrc`. The crew pins no Node of its own: a repo that states neither gets the current LTS on GitHub Actions and its runner's Node elsewhere. On Actions `setup-node` installs the version; off Actions (`use_node` in `scripts/run/common.sh`) a runner whose Node major differs fetches the repo's from nodejs.org for its own platform (`uname`): the latest of a major for `22`, exactly `22.11.0` when the repo says so. `NODE_DIST_URL` names a mirror. A platform with no published build keeps its own Node, with a warning. `commands` are run with `bash -c` from the repo root.
 - `paths` only feed the briefs' prose. `scout.env` values may use `${APP_PORT}`.
 - `scout.blockHosts` is applied runner-wide (`/etc/hosts`), so it must never name Agent HQ itself (Scout
   reports its verdict there, and a blocked HQ leaves the mission on "Scout is testing" for good) nor

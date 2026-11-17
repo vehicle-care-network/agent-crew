@@ -3,6 +3,14 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.11.2
+
+- **No Node version of the crew's own.** A repo that names none (`.nvmrc`, `crew.json` `node`) used to get
+  22; it now gets the current LTS on GitHub Actions and its runner's Node elsewhere. Off Actions, a full
+  version (`22.11.0`) is fetched exactly, a major gets its latest release, `NODE_DIST_URL` (or
+  `NVM_NODEJS_ORG_MIRROR`) names a mirror, and a platform nodejs.org has no working build for keeps its
+  own Node with a warning instead of failing the run.
+
 ## 1.11.1
 
 - **Sandbox runs use the repo's Node** (`.nvmrc`, else `crew.json` `node`), as `setup-node` does for a

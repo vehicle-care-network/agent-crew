@@ -53,7 +53,9 @@ function render(file) {
 for (const name of readdirSync('.crew/briefs')) if (name.endsWith('.md')) render(`.crew/briefs/${name}`);
 render('.crew/scout/PROMPT.md');
 
-const node = existsSync('.nvmrc') ? readFileSync('.nvmrc', 'utf8').trim() : String(config.node ?? '22');
+// The repo's Node: .nvmrc, else crew.json "node". A repo that states neither gets the current LTS on
+// GitHub Actions (setup-node reads `lts/*`) and whatever its runner has anywhere else: the crew pins nothing.
+const node = (existsSync('.nvmrc') ? readFileSync('.nvmrc', 'utf8').trim() : '') || String(config.node ?? 'lts/*');
 const port = Number(config.scout.port);
 const outputs = { node, scout_port: String(port), scout_base_url: `http://localhost:${port}` };
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(outputs).map(([k, v]) => `${k}=${v}\n`).join(''));
