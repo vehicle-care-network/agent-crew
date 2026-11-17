@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Shared by `scripts/run/<agent>.sh`: one agent's whole run as a script, for a runner that is not GitHub
 # Actions (Agent HQ's Vercel sandboxes). Each script sets AGENT, then sources this. HQ starts the sandbox
-# with the repo cloned (see the crew README, "The same run off GitHub Actions"), the crew laid into
+# with the repo cloned (see docs/reference.md, "The same run off GitHub Actions"), the crew laid into
 # `.crew/`, and these in the environment:
 #
 #   PARAMS                         JSON from HQ: the same object the workflow gets in `params`
