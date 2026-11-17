@@ -8,6 +8,13 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
 - **The crew runs without Agent HQ.** With no `AGENT_HQ_URL` variable, Iris, Scout, Radar's labels and the
   production probe run from the repo's own events and report on the PR and the run. A run that belongs to
   an HQ mission fails early and says what to set.
+- **Nova, Bolt, Iris and Patch run on your machine, without Agent HQ.** A Claude Code skill
+  (`templates/local/`, installed by `SETUP.md` as `.claude/skills/crew/`): type `/crew` and what to build.
+  Nova's mock opens in your browser, you approve it or give notes, Bolt builds it on a new branch, Iris
+  reviews, Patch fixes, and it ends with a pull request for a person to land. The skill fetches the briefs
+  at `v1` into `.crew/` and renders them with the repo's `crew.json`, so the agents behave as they do on
+  GitHub; the briefs and the HQ-driven runs are unchanged. Scout and Rocket are not part of it.
+  `scripts/setup/check.mjs` checks the installed skill.
 - **`AGENT_HQ_URL` no longer has a default.** Before releasing this, a repo that reports to an HQ must set
   the variable (repo or organization): `gh variable set AGENT_HQ_URL --body https://your-hq.example`.
 - The HQ App's name and commit identity are variables (`AGENT_HQ_BOT`, `AGENT_HQ_BOT_EMAIL`); the defaults

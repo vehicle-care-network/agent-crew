@@ -2,7 +2,9 @@
 
 These steps install the crew in one repo. They are written to be followed by a person or by Claude Code.
 Steps 1 to 5 give you **Iris** (reviews every PR) and **Radar** (labels every PR's impact) on any repo, in
-about ten minutes. Steps 6 to 8 are optional: **Scout**, the production probe, and Agent HQ.
+about ten minutes, and the **`/crew` skill**: Nova, Bolt, Iris and Patch on your own machine, in Claude
+Code ([below](#build-something-with-the-crew-on-your-machine)). Steps 6 to 8 are optional: **Scout**, the
+production probe, and Agent HQ.
 
 > **If you are Claude, setting this up for someone:**
 > - Work on a new branch and open a pull request. Never push to the default branch.
@@ -21,6 +23,7 @@ about ten minutes. Steps 6 to 8 are optional: **Scout**, the production probe, a
 - The [`gh`](https://cli.github.com) CLI, signed in (`gh auth status`), and Node 20 or newer.
 - A Claude subscription or an Anthropic API key. Each run is billed to that account.
 - For Scout only: a Next.js app that uses Firebase (Firestore and Auth), and npm.
+- For the `/crew` skill only: [Claude Code](https://claude.com/claude-code) on your machine.
 
 ## 1 · Get the crew's files
 
@@ -39,9 +42,10 @@ except what you copy.
 
 ```bash
 cp -Rn "$CREW/templates/base/." .
+cp -Rn "$CREW/templates/local/." .
 ```
 
-That adds four files you edit and two you don't:
+That adds four files you edit and a few you don't:
 
 | File | What to do |
 | --- | --- |
@@ -49,6 +53,7 @@ That adds four files you edit and two you don't:
 | `.github/agents/risk-map.json` | Make the globs match your folders (below). |
 | `.github/agents/IRIS.notes.md` | Your review conventions, or delete the file. |
 | `.github/workflows/agent-iris.yml`, `agent-radar.yml` | Leave as they are. |
+| `.claude/skills/crew/` | Leave as it is: the `/crew` skill for Claude Code. |
 
 **`crew.json`**, field by field:
 
@@ -97,24 +102,54 @@ that includes `vehicle-care-network/agent-crew@*` and `anthropics/claude-code-ac
 node "$CREW/scripts/setup/check.mjs" --github
 ```
 
-It reads your files, and with `--github` your repo's secrets, labels and variables. It changes nothing.
+It reads your files (the `/crew` skill's among them), and with `--github` your repo's secrets, labels and
+variables. It changes nothing.
 `✗` lines would fail a run; fix them and run it again until it says **Ready**. `!` lines are worth reading.
 
 ## 5 · Merge, then watch it work
 
 ```bash
-git add .github && git commit -m "Set up the agent crew" && git push -u origin crew-setup
+git add .github .claude/skills/crew && git commit -m "Set up the agent crew" && git push -u origin crew-setup
 gh pr create --fill
 ```
 
-Merge that pull request. (Iris doesn't review a PR that only changes the crew's own setup, so nothing runs
-on this one.) Then, on the next pull request anyone opens:
+If your repo's `.gitignore` covers `.claude/`, leave `.claude/skills/crew` out of that `git add`: the skill
+then works on your machine only.
+
+Merge that pull request. (Radar labels it, and Iris may review it: she skips a PR that only changes files
+under `.github/`, and this one adds the skill too.) Then, on the next pull request anyone opens:
 
 - **Radar** adds an `impact:` label within a minute.
 - **Iris** posts a review a few minutes later, and again when new commits change the PR's files.
 - Comment `/iris look at the error handling` on any PR to ask her yourself.
 
 Runs are under the repo's **Actions** tab. That's the base setup done.
+
+## Build something with the crew, on your machine
+
+The `/crew` skill runs the designing and building half of the crew in Claude Code, on your machine, with
+no Agent HQ and nothing to host. It uses the Claude account Claude Code is signed in to; the secret from
+step 3 is not involved. Open the repo in Claude Code, on a clean working tree, and type:
+
+> /crew add a way to export the bookings table as CSV
+
+1. **Nova** designs it: one HTML mock in your app's own look, opened in your browser from `agent-out/`.
+   Approve it, or give notes and she revises it. Nothing is built before you approve. For a change with
+   nothing to draw (a bug fix, a backend change) she says so, and you confirm the plan instead.
+2. **Bolt** builds the approved mock on a new branch, `crew/<name>`, with tests, and runs your lint,
+   type-check and test commands.
+3. **Iris** reviews the branch, and **Patch** fixes what she found, for up to three rounds.
+4. You try it, ask for changes if you want them, and say when to open the **pull request**. That is the
+   first time anything is pushed. Landing it is yours: nothing is merged for you.
+
+The agents follow the same briefs as on GitHub. The skill fetches them at the crew's `v1` release into
+`.crew/` and fills them in from your `crew.json` and `*.notes.md`; `.crew/` and `agent-out/` (the mocks,
+the review, the summaries) are kept out of git through `.git/info/exclude`. It needs network access to
+GitHub to fetch the crew, and `gh` to open the pull request.
+
+Not in the skill: **Scout** (label the pull request `scout` once step 6 is done) and **Rocket**'s release
+trains. To run the whole line in the cloud, with a dashboard, several missions at once and releases, see
+Agent HQ ([demo](https://agent-hq-demo.vercel.app)) and step 8.
 
 ---
 
@@ -203,6 +238,9 @@ pushes), and if the App isn't `vcn-agent-hq`, set `AGENT_HQ_BOT` and `AGENT_HQ_B
 | `AGENT_HQ_URL is not set, and … belongs to an Agent HQ mission` | An HQ agent's workflow ran without an HQ address | Step 8, or delete the `templates/hq` workflows |
 | Nothing runs when you comment `/iris` or `/scout` | Comment triggers only work once the workflow is on the default branch, and only for people who belong to the repo | Merge the setup PR first |
 | Iris didn't review a PR | It is a draft, comes from a fork, or only changes the crew's own files | Mark it ready, or comment `/iris` |
+| `/crew` isn't offered in Claude Code | The skill isn't in this checkout, or Claude Code started before it was | Step 2's second `cp`, then start a new Claude Code session in the repo |
+| `/crew`: `[Crew] Couldn't fetch the crew` | No network access to GitHub, and no earlier copy in `.crew/` | Go online and run it again. For a fork or another version, set `CREW_REPO` or `CREW_REF` |
+| `/crew`: `.github/agents/crew.json is missing on this branch` | The setup PR isn't merged yet, so the default branch has no `crew.json` | Merge it, or tell the skill to start from your current branch |
 | Scout: `refusing to overwrite` `.env.local` | Local run with your own `.env.local` present | Move it aside for the run |
 | Scout: every flow fails at sign-in | `loginAs` doesn't match your sign-in page, or the seed didn't create the account | Step 6: fix `e2e/scout/_support/scout.ts` and `scripts/scout/seed.mjs`, and run it locally |
 | Scout: "the agent step failed, so this PR was only smoke-tested" | Claude couldn't start | Step 3 |
