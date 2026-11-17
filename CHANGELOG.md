@@ -3,6 +3,12 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.11.3
+
+- **A fake's variables reach the app.** `start-env.sh` wrote the first fake's variable onto the end of the
+  repo's last `scout.env` line (no line break between them), so that variable was never set and the
+  repo's last one carried it as part of its value. Affected every repo with a fake and a `scout.env`.
+
 ## 1.11.2
 
 - **No Node version of the crew's own.** A repo that names none (`.nvmrc`, `crew.json` `node`) used to get
