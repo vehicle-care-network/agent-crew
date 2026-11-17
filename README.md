@@ -32,14 +32,15 @@ No agent can merge. Reviews are comments, and landing a PR stays with a person.
 Claude asks where the agents should run, copies the starter files for that choice, fills them in from
 your code, runs the check script and opens a pull request.
 
-| Where | Compute | Besides Claude, you need | What you get |
-| --- | --- | --- | --- |
-| **GitHub Actions** | Paid, to GitHub. Scales with your needs | A GitHub repo with Actions | Iris and Radar on every pull request, Scout on request |
-| **Vercel sandboxes** | Paid, to Vercel. Scales with your needs | An [Agent HQ](#agent-hq) and a Vercel account | The whole crew, with no workflows or secret in the repo |
-| **Your machine** | Free. Limited by your computer | Claude Code | Nova, Bolt, Iris and Patch when you type `/crew`; nothing runs by itself |
+| | ⚙️ GitHub Actions | ▲ Vercel sandboxes | 💻 Your machine |
+| --- | :---: | :---: | :---: |
+| **Cost** | 💳 Paid | 💳 Paid | 🆓 Free |
+| **Scale** | 📈 Grows with your needs | 📈 Grows with your needs | 🔒 Limited by your computer |
+| **Claude subscription or API key** | ✅ | ✅ | ✅ |
+| **Access you need** | GitHub Actions | Vercel + [Agent HQ](#agent-hq) | Claude Code |
+| **Runs by itself** | ✅ | ✅ | ❌ you type `/crew` |
 
-All three need a Claude subscription or an Anthropic API key.
-[SETUP.md](SETUP.md#first-where-should-the-agents-run) compares the three.
+[SETUP.md](SETUP.md#first-where-should-the-agents-run) has the full comparison and the steps for each.
 
 **By hand.** Follow [SETUP.md](SETUP.md): it is the same steps, about ten minutes for Iris and Radar.
 
