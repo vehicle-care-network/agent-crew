@@ -297,6 +297,27 @@ new definition and no code. The format is in [`scout/FAKES.md`](../scout/FAKES.m
 
 `node --test scripts/scout/fakes.test.mjs` runs the server's tests.
 
+## Diagnosing a broken run
+
+A run that ends before the agent does its work (Scout never opens a browser because the app, the
+emulators or Chromium won't start) is not a finding about the code, and retrying it changes nothing.
+Agent HQ's mission manager, Shep, repairs those itself, and Radar's mode `diagnose` is its first step:
+HQ sends the end of the failed run's log (`log`), whose run it was (`agent`) and what it was for
+(`task`), and Radar reads the log against the code that ran, the crew's scripts under `.crew/` and the
+repo's side of them. It writes `radar-out/diagnosis.json`:
+
+| Field | What it holds |
+| --- | --- |
+| `where` | `repo` (this repository), `crew` (the crew's scripts), `hq` (how HQ started the run, or its image), `person` (a secret or setting only a person can change) or `retry` (nothing a change would fix) |
+| `cause` | One sentence: what failed and why |
+| `evidence` | The log lines and `file:line` references it rests on |
+| `fix` | What to change, as a task for whoever makes it |
+| `files` | The paths involved, in the place `where` names |
+
+`hq.mjs diagnosis-post <repairId> <file>` sends it; HQ opens the fix where the cause is and runs the same
+thing again with the fix applied (the crew from the fix's branch, when the fix is in the crew). Radar
+changes nothing itself.
+
 ## Models
 
 With Agent HQ, right before each Claude step the workflow asks HQ which model you chose for that agent (`hq.mjs model

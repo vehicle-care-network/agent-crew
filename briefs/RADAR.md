@@ -164,6 +164,57 @@ mkdir -p /tmp/try/scout-out/fakes/hq && cp radar-out/fake.json /tmp/try/scout-ou
 
 A service the code never calls is a definition with no routes and an `about` that says so.
 
+## Mode `diagnose`: why a run of the crew broke
+
+A run of one of the agents (`$RADAR_FAILED_AGENT`) ended before it did its work: Scout never opened a
+browser, Bolt never got to the task. `$RADAR_TASK` says what the run was for. The end of its output is
+in `radar-out/run.log`. Shep, HQ's mission manager, wants to know why and where the fix belongs, so it
+can send someone to make it and then run the same thing again. You diagnose; you change nothing.
+
+Work from the log, backwards from where it stops:
+
+1. **The line that ended it.** Find the first real error, not the last line (a script's own "couldn't
+   ..." message usually follows the tool's actual complaint a few lines up). Quote it.
+2. **Who printed it.** `[Sandbox]` lines are HQ starting the run (cloning, laying the crew in); `[Image]`
+   is HQ's prepared sandbox image; `[Scout]`, `[Bolt]`, `[CrewSetup]`, `[ScoutEnv]` and the like are the
+   crew's scripts, which are in this checkout under `.crew/` exactly as the run had them; everything
+   else is a tool the repo or the crew ran (`npm`, `playwright`, `firebase`, the app itself).
+3. **Read the code that ran.** Open the crew script that was running (`.crew/scripts/run/<agent>.sh` and
+   what it calls) and the repo's side of it (`.github/agents/crew.json`, `.github/scout/`, `scripts/scout/`,
+   `package.json`, `.nvmrc`, the lockfile). Follow the failing command to what it was given. When you can
+   check a guess cheaply here (a version, a file that should exist, a command's `--help`), check it.
+4. **Decide where the cause is.** Ask what would have to change for this same run to get through:
+   - `repo`: something in this repository: its `crew.json`, Scout config, seed or start script, a pinned
+     dependency, the app not starting on emulators.
+   - `crew`: the crew's own scripts or briefs are wrong or don't handle this runner (a missing fallback,
+     a bad assumption about the OS or a tool's version). True when any repo with the same setup would
+     break the same way.
+   - `hq`: how HQ started the run or built its image (the `[Sandbox]` or `[Image]` part, a missing tool
+     the image is meant to carry, the request HQ sent).
+   - `person`: only a person can fix it: a secret, a token's permission, billing, a setting in a
+     dashboard. Say exactly which and where.
+   - `retry`: nothing is wrong that a change would fix: a network blip, a rate limit, a registry that
+     timed out. Only when the log shows it.
+   When two would work (the repo could pin a newer version; the crew could cope with the old one), pick
+   the one that fixes it for every repo, and say the other in `fix`.
+
+Write `radar-out/diagnosis.json`:
+
+```json
+{
+  "where": "crew",
+  "cause": "One sentence a person can act on: what failed and why.",
+  "evidence": ["The quoted log line", "path/to/file:line and what it does"],
+  "fix": "What to change, written as a task for the engineer who will make it: the file, the behaviour wanted, what must keep working, and how to tell it worked. No diff.",
+  "files": ["scripts/run/scout.sh"]
+}
+```
+
+`files` are paths in the place `where` names (for `crew`, without the `.crew/` prefix). For `person`
+and `retry`, `fix` says what to do and `files` is empty. If the log doesn't show the cause, say so in
+`cause`, give your best reading in `fix`, and still pick the most likely `where`: a guess that is
+labelled is more use than none.
+
 ## Rules
 
 Never change code, commit, push, open issues or comment. Write only under `radar-out/` (and `/tmp`). Never put
