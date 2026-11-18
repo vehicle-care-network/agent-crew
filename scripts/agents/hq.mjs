@@ -14,6 +14,8 @@
  *   node .crew/scripts/agents/hq.mjs fakes-pull <dir>              # Scout: the repo's fake services from HQ's Fakes page, one <name>.json each; prints the count (never fails)
  *   node .crew/scripts/agents/hq.mjs fake-post <fakeId> <file>     # Radar: the fake it drafted from the code
  *   node .crew/scripts/agents/hq.mjs fake-fail <fakeId> "<why>"    # Radar: the draft didn't come out
+ *   node .crew/scripts/agents/hq.mjs diagnosis-post <repairId> <file>   # Radar: why a run broke, and where the fix belongs
+ *   node .crew/scripts/agents/hq.mjs diagnosis-fail <repairId> "<why>"  # Radar: no diagnosis came out
  *
  * Env: AGENT_HQ_URL (your HQ's address), ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN.
  *
@@ -144,6 +146,20 @@ if (command === 'fake-post' || command === 'fake-fail') {
   } else {
     await post('/api/agents/fakes', { action: 'failed', id, error: String(rest[0] ?? '').slice(0, 400), runUrl });
     console.log('[AgentHq] Told HQ the draft failed');
+  }
+  process.exit(0);
+}
+if (command === 'diagnosis-post' || command === 'diagnosis-fail') {
+  const id = missionId;
+  if (!id) fail(`${command} needs the repair's id`);
+  const runUrl = process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : process.env.RUN_URL || '';
+  if (command === 'diagnosis-post') {
+    const diagnosis = JSON.parse(readFileSync(rest[0], 'utf8'));
+    await post('/api/agents/repairs', { action: 'diagnosis', id, diagnosis, runUrl });
+    console.log(`[AgentHq] Sent the diagnosis to HQ: ${diagnosis.where}, ${String(diagnosis.cause).slice(0, 120)}`);
+  } else {
+    await post('/api/agents/repairs', { action: 'failed', id, error: String(rest[0] ?? '').slice(0, 400), runUrl });
+    console.log('[AgentHq] Told HQ no diagnosis came out');
   }
   process.exit(0);
 }

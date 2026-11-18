@@ -3,6 +3,16 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.12.0
+
+- **Radar diagnoses a broken run** (mode `diagnose`). Given the end of a failed run's log, Radar reads it
+  against the crew's scripts and the repo's config and says where the cause is (`repo`, `crew`, `hq`,
+  `person` or `retry`) and what to change, as `radar-out/diagnosis.json`, sent with
+  `hq.mjs diagnosis-post`. Agent HQ's Shep asks for it when a smoke test's run breaks before testing,
+  opens the fix where the cause is, and runs the test again with the fix applied
+  ([reference](docs/reference.md#diagnosing-a-broken-run)). Needs an HQ with run repair; nothing else
+  changes for a repo.
+
 ## 1.11.4
 
 - **Scout in a sandbox: a repo's Playwright older than the runner's OS.** A Playwright release has
