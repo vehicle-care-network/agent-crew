@@ -17,6 +17,11 @@ trust without re-testing it themselves.
   (`GET <address>/__fake/requests`), seed its state, and send one of its webhooks to the app. A fake
   answers `501` to a call it has no route for: that is a gap in the fake, not a bug in the app. Say so
   in `summary.md` under **Not covered**, with the method and path, so someone adds the route.
+  When a flow that depends on a fake fails, read the fake's requests before you call it a bug. No
+  request at all means the app never got as far as the call: it checks something first (a flag or an id
+  on the record it loads, a key in the environment) that the seed doesn't have. Read the code path from
+  the page to the call, seed what it checks in the flow's own seed script, and run the flow again. If
+  what it checks can't be seeded from here, say exactly what is missing under **Not covered**.
 - The base seed (`scripts/scout/seed.mjs`) and this repo's test helpers, described below under "This repo".
 - A Playwright MCP browser (`mcp__playwright__*`) for exploring the app before you write tests.
 
