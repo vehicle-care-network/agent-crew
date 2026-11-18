@@ -129,3 +129,21 @@ test('served over HTTP, with CORS for the app’s browser code', async () => {
     server.close();
   }
 });
+
+test('summarize says what the app asked of each fake, and which fake it never called', async () => {
+  const { summarize } = await import('./fakes.mjs');
+  const plan = { fakes: [{ name: 'nylas', url: 'http://localhost:4600', env: { NYLAS_API_URL: 'x' } }, { name: 'stripe', url: 'http://localhost:4601', env: {} }] };
+  const entries = [
+    { fake: 'stripe', method: 'GET', path: '/v1/a/1', route: '/v1/a/:id', status: 200 },
+    { fake: 'stripe', method: 'GET', path: '/v1/a/2', route: '/v1/a/:id', status: 404 },
+    { fake: 'stripe', method: 'POST', path: '/v1/zzz', route: null, status: 501 },
+    { fake: 'stripe', webhook: 'paid', url: 'http://app/hook', status: 200 },
+  ];
+  const lines = summarize(plan, entries);
+  assert.match(lines[0], /^::warning::\[Fakes\] nylas: the app never called it .*NYLAS_API_URL/);
+  assert.equal(lines[1], '[Fakes] stripe: 3 calls from the app');
+  assert.ok(lines.includes('[Fakes]   GET /v1/a/:id ×2 → 200, 404'));
+  assert.ok(lines.includes('[Fakes]   POST /v1/zzz (no route) ×1 → 501'));
+  assert.ok(lines.some((l) => /1 call had no route/.test(l)));
+  assert.ok(lines.includes('[Fakes]   webhooks sent: paid → 200'));
+});

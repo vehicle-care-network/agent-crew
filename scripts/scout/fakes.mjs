@@ -408,6 +408,39 @@ export function serveFake(fake, port) {
   });
 }
 
+/**
+ * What the app asked of each fake during a run, for the run's log: a fake that is up proves nothing, a
+ * fake that was called does. One line per fake, each route with how often and the statuses it gave; a
+ * fake nobody called says so, since that is the usual reason a flow that needs it fails (the app never
+ * got as far as the call: seed data it checks first, or a variable it reads under another name).
+ */
+export function summarize(plan, entries) {
+  const lines = [];
+  for (const f of plan.fakes ?? []) {
+    const mine = entries.filter((e) => e.fake === f.name);
+    const calls = mine.filter((e) => !e.webhook);
+    const hooks = mine.filter((e) => e.webhook);
+    if (!calls.length) {
+      lines.push(`::warning::[Fakes] ${f.name}: the app never called it (${f.url}). It read these to find it: ${Object.keys(f.env ?? {}).join(', ') || 'no variables'}.`);
+    } else {
+      const byRoute = new Map();
+      for (const e of calls) {
+        const key = e.route === null ? `${e.method} ${e.path} (no route)` : `${e.method} ${e.route}`;
+        const seen = byRoute.get(key) ?? { n: 0, statuses: new Set() };
+        seen.n += 1;
+        seen.statuses.add(e.status);
+        byRoute.set(key, seen);
+      }
+      lines.push(`[Fakes] ${f.name}: ${calls.length} call${calls.length === 1 ? '' : 's'} from the app`);
+      for (const [key, seen] of byRoute) lines.push(`[Fakes]   ${key} ×${seen.n} → ${[...seen.statuses].join(', ')}`);
+      const missing = calls.filter((e) => e.route === null).length;
+      if (missing) lines.push(`::warning::[Fakes] ${f.name}: ${missing} call${missing === 1 ? '' : 's'} had no route (answered 501): the fake is missing something the app asks for.`);
+    }
+    if (hooks.length) lines.push(`[Fakes]   webhooks sent: ${hooks.map((e) => `${e.webhook} → ${e.status}`).join(', ')}`);
+  }
+  return lines;
+}
+
 // ---- Command line
 
 async function main() {
@@ -459,7 +492,24 @@ async function main() {
     }
     return;
   }
-  console.error('Usage: fakes.mjs plan | env | hosts | urls | serve | check <file>');
+  if (command === 'summary') {
+    const logFile = join(out, 'requests.ndjson');
+    const entries = existsSync(logFile)
+      ? readFileSync(logFile, 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .flatMap((l) => {
+            try {
+              return [JSON.parse(l)];
+            } catch {
+              return [];
+            }
+          })
+      : [];
+    for (const line of summarize(readPlan(), entries)) console.log(line);
+    return;
+  }
+  console.error('Usage: fakes.mjs plan | env | hosts | urls | serve | summary | check <file>');
   process.exit(1);
 }
 

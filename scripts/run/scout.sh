@@ -259,6 +259,9 @@ else
   if [ "$SCOUT_MODE" = pr ]; then node .crew/scripts/scout/report.mjs || warn "Couldn't post the report on the PR"; fi
 fi
 
+# What the app asked of each fake service, in the log: a fake that is up but was never called is the usual
+# reason a flow that needs one fails.
+SCOUT_OUT="$SCOUT_OUT" node .crew/scripts/scout/fakes.mjs summary || true
 bash .crew/scripts/scout/stop-env.sh
 
 # The agent step never stops the report; fail the run afterwards so a broken agent shows as a failure.

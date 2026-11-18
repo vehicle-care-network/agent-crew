@@ -3,6 +3,14 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.12.1
+
+- **The run's log says what the app asked each fake.** At the end of a Scout run, one line per fake
+  service: the routes the app called, how often, and the statuses it got, with a warning for calls that
+  had no route. A fake the app never called gets a warning naming the variables that point at it: the
+  fake being up says nothing about whether the flow reached it. Scout is told to check the same thing
+  before it calls a flow failed, and to seed what the app checks before it makes the call.
+
 ## 1.12.0
 
 - **Radar diagnoses a broken run** (mode `diagnose`). Given the end of a failed run's log, Radar reads it

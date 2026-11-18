@@ -502,6 +502,12 @@ jobs:
           HQ_EVIDENCE_URL: ${{ steps.hq.outputs.url }}
         run: node .crew/scripts/scout/report.mjs
 
+      # What the app asked of each fake service: one that is up but was never called is the usual reason a
+      # flow that needs it fails.
+      - name: What the app asked the fake services
+        if: always()
+        continue-on-error: true
+        run: node .crew/scripts/scout/fakes.mjs summary
       - name: Stop the app
         if: always()
         run: bash .crew/scripts/scout/stop-env.sh
