@@ -12,7 +12,7 @@
  * SCOUT_AGENT_OUTCOME, HQ_EVIDENCE_URL.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { isCore, loadTests } from './results.mjs';
+import { coversPr, isCore, loadTests } from './results.mjs';
 import { parseOnly } from './steps.mjs';
 
 const MARKER = '<!-- scout-qa -->';
@@ -55,7 +55,7 @@ function baseBody() {
   }
   const passed = tests.filter((t) => t.status === 'passed').length;
   const failed = tests.filter((t) => t.status === 'failed' || t.status === 'timedOut');
-  const prTests = tests.filter((t) => !isCore(t));
+  const prTests = tests.filter(coversPr);
   const counts = failed.length ? `**${failed.length} of ${tests.length} flows failed**` : `**All ${tests.length} flows passed**`;
   // Core smoke flows passing says the app starts, not that this PR works. Never let them stand in for
   // PR coverage: say plainly when the agent failed or wrote no PR-specific flows.
@@ -71,7 +71,7 @@ function baseBody() {
   const icon = (s) => (s === 'passed' ? '✅' : s === 'skipped' ? '⏭️' : '❌');
   const rows = tests
     .map((t) => {
-      const where = isCore(t) ? 'core' : 'this PR';
+      const where = !isCore(t) ? 'this PR' : t.inPr ? 'core, changed in this PR' : 'core';
       const notes = [t.error && `\`${t.error.slice(0, 140)}\``, t.problems.length && `${t.problems.length} console/server error(s)`]
         .filter(Boolean)
         .join('<br>');

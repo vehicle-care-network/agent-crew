@@ -192,6 +192,8 @@ const manifestTests = tests.map((t, i) => {
     title: t.title,
     status: t.status,
     scope: scopeOf(t),
+    // A committed spec this PR adds or edits: HQ counts it as a test of the PR whatever its scope.
+    ...(t.inPr ? { inPr: true } : {}),
     // The spec it came from, relative to e2e/scout: what "Keep this flow" promotes.
     file: String(t.file || '').slice(0, 200),
     project: t.project,
