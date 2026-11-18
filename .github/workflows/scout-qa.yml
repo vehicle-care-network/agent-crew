@@ -197,6 +197,8 @@ jobs:
           mkdir -p scout-out
           if [ "$SCOUT_MODE" = pr ]; then
             gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files?per_page=100" --paginate --jq '.[].filename' > changed-files.txt
+            # Kept with the run's output: the report counts a committed spec this PR changes as a test of the PR.
+            cp changed-files.txt scout-out/changed-files.txt
             node .crew/scripts/scout/areas.mjs < changed-files.txt > scout-out/areas.json
           else
             node .crew/scripts/scout/areas.mjs --all > scout-out/areas.json

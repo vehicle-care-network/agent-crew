@@ -85,6 +85,8 @@ export SCOUT_BASE_URL
 # ---- Size the run: how much testing this change deserves, and which areas it touches.
 if [ "$SCOUT_MODE" = pr ]; then
   gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" --paginate --jq '.[].filename' > changed-files.txt
+  # Kept with the run's output: the report counts a committed spec this PR changes as a test of the PR.
+  cp changed-files.txt "$SCOUT_OUT/changed-files.txt"
   node .crew/scripts/scout/areas.mjs < changed-files.txt > "$SCOUT_OUT/areas.json"
 else
   : > changed-files.txt

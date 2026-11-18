@@ -3,6 +3,15 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.12.2
+
+- **A PR that changes a core flow is tested by that flow.** Scout's report sorted flows by folder alone,
+  so a pull request that repairs or edits a committed spec under `core/` and passes it was reported as
+  "No flows specific to this PR were tested", which HQ reads as a run that didn't test the PR. A core
+  spec the PR itself adds or edits now counts as a test of the PR (shown as "core, changed in this PR"),
+  in the PR comment and in what HQ is sent (`inPr` on the flow; an older HQ ignores it and goes by the
+  comment).
+
 ## 1.12.1
 
 - **The run's log says what the app asked each fake.** At the end of a Scout run, one line per fake

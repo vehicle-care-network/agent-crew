@@ -13,9 +13,26 @@ export function loadTests(out) {
   const resultsPath = `${out}/results.json`;
   if (!existsSync(resultsPath)) return null;
   const index = loadSteps(out);
-  return JSON.parse(readFileSync(resultsPath, 'utf8'))
+  const changedPath = `${out}/changed-files.txt`;
+  const changed = existsSync(changedPath) ? readFileSync(changedPath, 'utf8').split('\n') : [];
+  const rows = JSON.parse(readFileSync(resultsPath, 'utf8'))
     .suites.flatMap((s) => collectTests(s))
     .map((row) => ({ ...row, steps: stepsFor(row, index) }));
+  return markInPr(rows, changed);
+}
+
+/**
+ * Marks the rows whose spec the pull request itself adds or edits (`inPr`). `changed` is the PR's file
+ * list, as repo paths; a row's `file` is relative to the Scout test folder, wherever the repo keeps it,
+ * so a changed path matches when it ends with that file.
+ */
+export function markInPr(rows, changed) {
+  const paths = changed.map((p) => p.trim()).filter(Boolean);
+  if (!paths.length) return rows;
+  return rows.map((row) => {
+    const file = String(row.file || '');
+    return file && paths.some((p) => p === file || p.endsWith(`/${file}`)) ? { ...row, inPr: true } : row;
+  });
 }
 
 /** Reads an attachment's bytes whether Playwright wrote it to disk or inlined it as base64. */
@@ -28,6 +45,12 @@ export const isCore = (test) => /(^|\/)core\//.test(test.file);
 export const isFeature = (test) => /(^|\/)features\//.test(test.file);
 /** Where a flow comes from: the committed core suite, a kept feature flow, or this run's own spec. */
 export const scopeOf = (test) => (isCore(test) ? 'core' : isFeature(test) ? 'feature' : 'pr');
+/**
+ * Whether a flow speaks to this pull request: Scout's own for the run, a kept flow of an area it touches,
+ * or a committed core spec the PR itself adds or edits. A PR that repairs a core flow is tested by that
+ * flow, so the flow's folder alone doesn't make it "core only".
+ */
+export const coversPr = (test) => !isCore(test) || test.inPr === true;
 
 function collectTests(suite, path = []) {
   const here = suite.title && !suite.title.endsWith('.ts') ? [...path, suite.title] : path;
