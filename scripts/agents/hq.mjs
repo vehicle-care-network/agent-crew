@@ -10,7 +10,7 @@
  *   node .crew/scripts/agents/hq.mjs github-token                  # prints a token to push as the HQ App (Bolt, Patch)
  *   node .crew/scripts/agents/hq.mjs qa running|error              # Scout: the run started / broke before results (env PR_NUMBER, HEAD_SHA, RUN_URL; MISSION_ID for a smoke test)
  *   node .crew/scripts/agents/hq.mjs model <agent>                 # prints the model chosen for the agent in HQ (empty when none; never fails)
- *   node .crew/scripts/agents/hq.mjs specs-pull                    # Scout in a sandbox: the specs HQ kept from this PR's previous run, into e2e/scout (env PR_NUMBER); prints the count
+ *   node .crew/scripts/agents/hq.mjs specs-pull                    # Scout in a sandbox: the specs HQ kept from this PR's previous run (env PR_NUMBER) or for this saved smoke test (env SCENARIO_ID), into e2e/scout; prints the count
  *   node .crew/scripts/agents/hq.mjs fakes-pull <dir>              # Scout: the repo's fake services from HQ's Fakes page, one <name>.json each; prints the count (never fails)
  *   node .crew/scripts/agents/hq.mjs fake-post <fakeId> <file>     # Radar: the fake it drafted from the code
  *   node .crew/scripts/agents/hq.mjs fake-fail <fakeId> "<why>"    # Radar: the draft didn't come out
@@ -196,9 +196,11 @@ if (command === 'ideas-post') {
 if (command === 'specs-pull') {
   // Scout off GitHub Actions has no artifact from the previous run on this PR; HQ kept the spec sources
   // that run sent with its evidence (crew 1.7+). They go back where they were, under e2e/scout/.
+  // A saved smoke test has no PR: HQ keeps its spec with the test (SCENARIO_ID).
   const pr = Number(process.env.PR_NUMBER) || 0;
-  if (!pr) fail('specs-pull needs PR_NUMBER');
-  const { specs = [], runId = '' } = await post('/api/agents/specs', { pr });
+  const scenarioId = pr ? '' : process.env.SCENARIO_ID || '';
+  if (!pr && !scenarioId) fail('specs-pull needs PR_NUMBER, or SCENARIO_ID for a smoke test');
+  const { specs = [], runId = '' } = await post('/api/agents/specs', pr ? { pr } : { scenarioId });
   let written = 0;
   for (const { path, url } of specs) {
     if (!/^e2e\/scout\/[\w./-]+$/.test(path) || path.includes('..')) continue;
