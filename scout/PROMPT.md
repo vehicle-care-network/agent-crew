@@ -117,6 +117,12 @@ eight things in fifteen. In particular:
    Steps name real URLs, buttons and the seeded data (not "go to the page"). Use `[]` when nothing broke.
 8. **Write `scout-out/summary.md`**, under 300 words, for the developer who wrote the PR:
    - one line on what the PR changes, as you understood it;
+   - when you wrote no flow for this PR, a line starting **No browser flow:** with the reason (the change
+     has nothing a browser can reach: a server handler no page calls, a config or environment read, a
+     dependency, a unit test; or a committed flow already covers it, named) and what you checked instead
+     (the unit tests you ran, the code path you read). The committed flows still run and are the verdict;
+     HQ shows the PR as passed on those alone and a person reads this line before it lands, so never
+     skip a flow the diff can reach from a page, and never invent one to have something to show;
    - **Bugs found**: one line each (the steps are in `bugs.json`), or "None found";
    - **Not covered**: what you could not test here and why (needs a real integration, auth, data you
      could not seed), so nobody assumes it was checked;

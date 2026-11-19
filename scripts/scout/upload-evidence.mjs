@@ -210,7 +210,8 @@ const manifestTests = tests.map((t, i) => {
 /**
  * The specs this run wrote, sent along with the evidence so HQ keeps them past the artifact's 30 days:
  * on a PR, Scout's own specs and seeds (`pr-<n>-*`, `_seed/`), which "Keep this flow" in HQ promotes into
- * the repo; on a coverage run, every file it added or changed under the committed suites and the flow
+ * the repo; on a smoke test, its spec and seeds (`smoke/`, `_seed/`), which HQ keeps with the saved test
+ * so its next run is the same test and not a new one written from the steps; on a coverage run, every file it added or changed under the committed suites and the flow
  * guidance, which HQ opens as a PR. Sources only: small text files, at most 60 of them.
  */
 function specFiles() {
@@ -234,6 +235,10 @@ function specFiles() {
   } else if (pr && existsSync('e2e/scout')) {
     for (const f of readdirSync('e2e/scout')) if (f.startsWith(`pr-${pr}-`)) add(`e2e/scout/${f}`);
     if (existsSync('e2e/scout/_seed')) for (const f of readdirSync('e2e/scout/_seed')) add(`e2e/scout/_seed/${f}`);
+  } else if (process.env.SCOUT_MODE === 'smoke' && existsSync('e2e/scout/smoke')) {
+    // Files only: a helper a spec imports sits beside it, and a spec without it can't load next time.
+    for (const f of readdirSync('e2e/scout/smoke', { withFileTypes: true })) if (f.isFile()) add(`e2e/scout/smoke/${f.name}`);
+    if (existsSync('e2e/scout/_seed')) for (const f of readdirSync('e2e/scout/_seed', { withFileTypes: true })) if (f.isFile()) add(`e2e/scout/_seed/${f.name}`);
   }
   return list;
 }

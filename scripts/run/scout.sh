@@ -7,7 +7,8 @@
 # Firebase emulators when HQ built its image; else they are installed here (about a minute and a half).
 #
 # Two things the workflow did that this doesn't: keep artifacts on GitHub (the evidence goes to HQ, and the
-# specs Scout wrote on a PR come back from HQ for the next run, `hq.mjs specs-pull`) and cache node_modules.
+# specs Scout wrote on a PR or for a saved smoke test come back from HQ for the next run, `hq.mjs
+# specs-pull`) and cache node_modules.
 AGENT=scout
 cd "$(dirname "$0")/../../.." && . .crew/scripts/run/common.sh
 # Scout's own word to HQ is the evidence manifest (and `qa running|error`), never a `failed` report.
@@ -172,9 +173,11 @@ if ! chromium_install; then
   say "Using $(npx playwright --version) for this run"
 fi
 
-# ---- Re-runs start from the specs Scout already wrote for this PR (kept by HQ), instead of from scratch.
+# ---- Re-runs start from the specs Scout already wrote (kept by HQ), instead of from scratch: a PR's from
+# its previous run, a saved smoke test's from the run that last passed. Without them a smoke test is written
+# again from its steps on every run, and two runs of the same commit can disagree.
 REUSED=false
-if [ "$SCOUT_MODE" = pr ] && ! dry_run; then
+if { [ "$SCOUT_MODE" = pr ] || { [ "$SCOUT_MODE" = smoke ] && [ -n "$SCENARIO_ID" ]; }; } && ! dry_run; then
   if node "$HQ_MJS" specs-pull > "$SCOUT_OUT/specs-pull.txt" 2>&1 && [ "$(cat "$SCOUT_OUT/specs-pull.txt" | tail -1)" != "0" ]; then REUSED=true; fi
   say "Specs from the previous run: $(tail -1 "$SCOUT_OUT/specs-pull.txt") ($( [ "$REUSED" = true ] && echo reused || echo none))"
 fi

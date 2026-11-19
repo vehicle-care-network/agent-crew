@@ -3,6 +3,20 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.12.3
+
+- **A saved smoke test is the same test on every run, in a sandbox too.** On GitHub Actions the spec
+  Scout wrote for a smoke test came back as an artifact on its next run. A sandbox has no artifacts, so
+  Scout wrote the test again from the steps each time, and two runs of the same commit could disagree
+  (the same test passing, then failing, then passing on an unchanged main). The run now sends the
+  smoke spec and its seeds to HQ with the evidence, and the next run of that test starts from them
+  (`hq.mjs specs-pull` with `SCENARIO_ID`). HQ keeps the spec of the last run that passed, and drops it
+  when the test's steps are edited. Needs an HQ that keeps them; an older HQ answers "none" and the run
+  goes on as before.
+- **Scout says why when it writes no flow for a PR.** Its notes carry a `No browser flow:` line with the
+  reason and what it checked instead. HQ now reads such a run from the committed flows (passed, marked
+  as "committed flows only"; a failing one is a failure) instead of as a broken run.
+
 ## 1.12.2
 
 - **A PR that changes a core flow is tested by that flow.** Scout's report sorted flows by folder alone,

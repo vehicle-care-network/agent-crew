@@ -172,7 +172,9 @@ What differs from Actions, agent by agent:
   with both installed, plus the emulator jars and the Playwright MCP server; rebuilt weekly) and, without
   one, the script installs them itself (about a minute and a half). The specs Scout wrote on a PR's earlier
   run come back from HQ (`hq.mjs specs-pull`, the sources HQ kept with the run's evidence) instead of an
-  artifact; regression and smoke runs start from the committed flows every time. The app under test is
+  artifact, and so does a saved smoke test's spec (the one from its last passing run, until its steps are
+  edited), so every run of a saved test is the same test; a regression run starts from the committed flows
+  every time. The app under test is
   started without the run's credentials in its environment.
 - **Iris** takes the repo's `pull_request` event when HQ passes it on (`params.event`, `params.action`),
   with the workflow's skips (drafts, `agent/*` branches, crew-only PRs, nothing new since her review).
