@@ -64,7 +64,10 @@ async function failAndTellHq(message) {
 }
 
 const tests = loadTests(out);
-// Nothing ran (the app or Playwright failed first).
+// Nothing ran (the app or Playwright failed first), or record.sh set the results aside because the app
+// under test kept going down (broke.txt says so): a broken run, not failed flows.
+const brokePath = `${out}/broke.txt`;
+if (existsSync(brokePath)) await failAndTellHq(readFileSync(brokePath, 'utf8').trim() || 'The recorded run broke');
 if (!tests?.length) await failAndTellHq('No Playwright results to send');
 
 // Type errors in the PR's own files (the workflow's "Check the build" step): the flows were skipped.

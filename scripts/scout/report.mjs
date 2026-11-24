@@ -50,6 +50,10 @@ function finalBody() {
 
 function baseBody() {
   const tests = loadTests(out);
+  const brokePath = `${out}/broke.txt`;
+  if (existsSync(brokePath)) {
+    return `### Scout couldn't test this\n${readFileSync(brokePath, 'utf8').trim()}\n\nThis says nothing about the PR's code. See the [run log](${RUN_URL}).`;
+  }
   if (!tests) {
     return `### Scout couldn't produce results\nNo Playwright results were written, so the app or the test run failed before any flow ran. See the [run log](${RUN_URL}).`;
   }

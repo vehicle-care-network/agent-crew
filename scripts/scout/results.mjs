@@ -52,6 +52,31 @@ export const scopeOf = (test) => (isCore(test) ? 'core' : isFeature(test) ? 'fea
  */
 export const coversPr = (test) => !isCore(test) || test.inPr === true;
 
+/** Chromium's errors for a page that couldn't be opened because nothing was listening, or the server went away. */
+const NO_ANSWER = /net::ERR_(CONNECTION_REFUSED|CONNECTION_RESET|CONNECTION_CLOSED|EMPTY_RESPONSE|SOCKET_NOT_CONNECTED) at (\S+)/;
+
+/**
+ * The flows that failed only because the app under test wasn't answering: a navigation to the app's own
+ * address (`baseUrl`; any local address when it isn't known) that was refused or dropped. Such a failure
+ * is the environment going down, not the code: record.sh runs these again on an app that is up, and
+ * never reports one as a failed flow.
+ */
+export function unreachable(rows, baseUrl = '') {
+  let origin = '';
+  try {
+    origin = baseUrl ? new URL(baseUrl).origin : '';
+  } catch {
+    origin = '';
+  }
+  return rows.filter((row) => {
+    if (row.status === 'passed' || row.status === 'skipped') return false;
+    const url = NO_ANSWER.exec(row.error || '')?.[2];
+    if (!url) return false;
+    if (origin) return url === origin || url.startsWith(`${origin}/`) || url.startsWith(`${origin}?`);
+    return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|\?|$)/.test(url);
+  });
+}
+
 function collectTests(suite, path = []) {
   const here = suite.title && !suite.title.endsWith('.ts') ? [...path, suite.title] : path;
   const rows = (suite.specs || []).flatMap((spec) =>

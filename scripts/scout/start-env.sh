@@ -32,7 +32,6 @@ cfg() { node -e 'const c=require(process.cwd()+"/.github/agents/crew.json").scou
 APP_PORT="${SCOUT_APP_PORT:-$(cfg port)}"
 FS_PORT="${SCOUT_FS_PORT:-8080}"
 AUTH_PORT="${SCOUT_AUTH_PORT:-9099}"
-READY_PATH="$(cfg readyPath)"
 mkdir -p "$OUT"
 # The fakes this run uses, each with its port, written to $OUT/fakes/plan.json.
 fakes() { SCOUT_OUT="$OUT" node "$(dirname "$0")/fakes.mjs" "$@"; }
@@ -142,9 +141,6 @@ wait_for "http://localhost:${AUTH_PORT}" "Auth emulator" "$OUT/emulators.log" 60
 set -a; . ./.env.local; set +a
 node scripts/scout/seed.mjs
 
-npx next dev -p "$APP_PORT" > "$OUT/next-dev.log" 2>&1 &
-echo $! > "$OUT/next-dev.pid"
-wait_for "http://localhost:${APP_PORT}${READY_PATH}" "Next dev server" "$OUT/next-dev.log" 240
-# The first request to a route compiles it; warm the pages most flows start from so tests don't time out on that.
-for p in $(cfg warm); do curl -s -o /dev/null "http://localhost:${APP_PORT}${p}" || true; done
+# The app itself, in its own script: record.sh starts it again when it stops answering mid-run.
+SCOUT_OUT="$OUT" SCOUT_APP_PORT="$APP_PORT" bash "$(dirname "$0")/start-app.sh"
 echo "[ScoutEnv] Ready at http://localhost:${APP_PORT} (project $PROJECT)"
