@@ -3,6 +3,15 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.12.5
+
+- **A crew-config problem is named on the mission.** A sandbox run that failed because
+  `.github/agents/crew.json` was missing, lacked a required key, or a brief used a key it doesn't
+  define went to HQ as "The X run failed in the sandbox. See <url>", so finding the cause meant reading
+  the log. `crew_render` (`scripts/run/common.sh`) now reports the `[CrewSetup]` line `render.mjs`
+  printed as the reason for the failure. The line still reaches the run's log. A `crew.json` that isn't
+  valid JSON still gets the generic message.
+
 ## 1.12.4
 
 - **An app that stops answering is a broken run, not a failed flow.** `next dev` can go down in the
