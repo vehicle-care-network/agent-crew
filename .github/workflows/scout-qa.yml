@@ -439,13 +439,9 @@ jobs:
         if: always()
         env:
           SCOUT_BASE_URL: ${{ steps.crew.outputs.scout_base_url }}
-        run: |
-          if [ -n "$SCOUT_ONLY_GREP" ]; then
-            echo "Re-running only: $SCOUT_ONLY_GREP"
-            npx playwright test -c .crew/playwright.scout.config.ts --grep "$SCOUT_ONLY_GREP" || true
-          else
-            npx playwright test -c .crew/playwright.scout.config.ts || true
-          fi
+        # record.sh keeps the app up for it: a flow that failed only because the app wasn't answering is
+        # run again, and a run where it kept going down is reported as broken, never as failed flows.
+        run: bash .crew/scripts/scout/record.sh || true
 
       - name: Keep the specs for the next run
         if: always() && env.SCOUT_MODE != 'coverage' && !(env.SCOUT_MODE == 'regression' && env.MISSION_ID != '')
@@ -522,10 +518,17 @@ jobs:
           echo "::error::Scout's agent step failed, so this PR was only smoke-tested. Check that ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is set."
           exit 1
 
+      # The evidence step has told HQ the run broke (scout-out/broke.txt, from record.sh); the run says so too.
+      - name: Fail if the app stopped answering
+        if: always() && hashFiles('scout-out/broke.txt') != ''
+        run: |
+          echo "::error::$(cat scout-out/broke.txt)"
+          exit 1
+
       # HQ learns the verdict from the evidence manifest. If that didn't get through, the PR comment is
       # posted but the mission stays "Scout is testing": say so loudly instead of a green run.
       - name: Fail if the result didn't reach HQ
-        if: steps.hq.outcome == 'failure' && (env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke' || (env.SCOUT_MODE == 'regression' && env.MISSION_ID != ''))
+        if: steps.hq.outcome == 'failure' && hashFiles('scout-out/broke.txt') == '' && (env.SCOUT_MODE == 'pr' || env.SCOUT_MODE == 'smoke' || (env.SCOUT_MODE == 'regression' && env.MISSION_ID != ''))
         run: |
           echo "::error::Scout's result never reached Agent HQ (the evidence step failed), so the mission still shows Scout testing. See the 'Send evidence to Agent HQ' step; when HQ is back, send Scout again from the mission."
           exit 1

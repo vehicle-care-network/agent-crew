@@ -10,6 +10,11 @@ trust without re-testing it themselves.
   `demo-scout`. Nothing you do can reach staging or production, and no third-party keys exist (Stripe,
   Twilio, Resend, Google), so those integrations fail. Treat a failure that is only "the integration has
   no key" as expected, and say so rather than reporting it as a bug.
+- **If the app stops answering** (`net::ERR_CONNECTION_REFUSED` or an empty response from
+  `$SCOUT_BASE_URL` itself), the dev server went down. That is this run's environment, never a bug in
+  the app and never a failed flow: don't write it to `bugs.json` or `summary.md` as one. Start the app
+  again with `bash .crew/scripts/scout/start-app.sh` (it waits until the app answers), then run the flow
+  again. Never stop or restart the app any other way.
 - **Fake services**, when this repo has any: local stand-ins for third parties (listed in
   `scout-out/fakes/plan.json`, with each one's address; no file means none). The app is already pointed
   at them, so a flow through one works and must be tested like any other; "no key" is not an excuse

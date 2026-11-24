@@ -3,6 +3,20 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.12.4
+
+- **An app that stops answering is a broken run, not a failed flow.** `next dev` can go down in the
+  middle of a Scout run (it restarts itself when memory runs short, and Scout's agent has a shell). The
+  flows that ran while it was down failed on their first page with `net::ERR_CONNECTION_REFUSED`, and
+  went to HQ as failed flows: a smoke test showed "Failed", and Bolt was sent to fix a bug that wasn't
+  in the app. The recorded run (`scripts/scout/record.sh`, used by the workflow and the sandbox script)
+  now checks the app answers first and starts it again when it doesn't (`scripts/scout/start-app.sh`,
+  split out of `start-env.sh`), with the end of `next-dev.log` in the run's log so the reason is on
+  record. Flows that still failed only because the app wasn't answering are run once more. If it
+  happens twice, HQ is told the run broke, with the reason, instead of being sent failed flows; the
+  PR comment says the same. Scout's brief tells it to restart the app the same way and never to report
+  a dead app as a bug.
+
 ## 1.12.3
 
 - **A saved smoke test is the same test on every run, in a sandbox too.** On GitHub Actions the spec

@@ -242,11 +242,11 @@ fi
 export SCOUT_AGENT_OUTCOME
 
 # ---- Run every Scout spec for the record: the verdict comes from this run, not the agent's own runs.
-if [ -n "$SCOUT_ONLY_GREP" ]; then
-  say "Re-running only: $SCOUT_ONLY_GREP"
-  npx playwright test -c .crew/playwright.scout.config.ts --grep "$SCOUT_ONLY_GREP" || true
-else
-  npx playwright test -c .crew/playwright.scout.config.ts || true
+# record.sh keeps the app up for it: a flow that failed only because the app wasn't answering is run again,
+# and a run where it kept going down is a broken run (HQ hears `qa error`), never a list of failed flows.
+if ! bash .crew/scripts/scout/record.sh; then
+  if [ "$SCOUT_MODE" = pr ] && ! dry_run; then node .crew/scripts/scout/report.mjs || warn "Couldn't post the report on the PR"; fi
+  die "$(cat "$SCOUT_OUT/broke.txt" 2>/dev/null || echo "Scout's recorded run broke before it had results")"
 fi
 
 # ---- Evidence to HQ (screenshots, videos, the specs), then the PR comment
