@@ -9,11 +9,14 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   that moved a step in the UI and corrected its core spec to match failed its two Landing flows, and
   Patch found nothing to fix: Scout's agent had edited the PR's correct `e2e/scout/core/layout.spec.ts`
   back to main's in the working tree, and the recorded run used that edited file. The core specs and
-  seeds, `.github/scout/`, `scripts/scout/` and `.github/agents/crew.json` are now copied just before the
-  agent starts and put back before the recorded run (`scripts/scout/pieces.sh`); files the agent added
-  among them are taken out, and the log names each one. The agent's own flows, kept flows and smoke specs
-  are untouched, and a coverage run keeps the core specs it adds and its `core-flows.md` column. Scout's
-  brief now says not to edit those pieces and to report a core spec that looks wrong in `summary.md`.
+  seeds, the harness (`e2e/scout/_support`), `.github/scout/`, `scripts/scout/` and
+  `.github/agents/crew.json` are now copied just before the agent starts and put back before the recorded
+  run (`scripts/scout/pieces.sh`); files the agent added among them are taken out, and the log names each
+  one. The agent's own flows, kept flows and smoke specs are untouched, a coverage run keeps the core specs
+  it adds and its `core-flows.md` column, and a run sent with ADJUSTMENTS keeps its rewrite of the core
+  flow it names. Scout's brief now says not to edit those pieces (with those two exceptions) and to report
+  a core spec that looks wrong in `summary.md`. The Actions workflow (`scout-qa.yml`) doesn't restore them
+  yet.
 
 ## 1.14.1
 

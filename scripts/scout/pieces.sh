@@ -6,16 +6,20 @@
 # prints each file it put back or took out, one per line.
 #
 #   bash .crew/scripts/scout/pieces.sh snapshot <dir>
-#   bash .crew/scripts/scout/pieces.sh restore <dir>     # env SCOUT_MODE
+#   bash .crew/scripts/scout/pieces.sh restore <dir>     # env SCOUT_MODE, SCOUT_ADJUST
 #
 # A coverage run's job is to add core specs (and their seeds) and fill in `.github/scout/core-flows.md`:
-# those stay. What the agent writes anywhere else under e2e/scout/ (its own flows, kept flows) is untouched.
+# those stay. A run a person sent with ADJUSTMENTS is asked to rewrite the named flow's spec and seed, which
+# may be a core one: its changes under e2e/scout/core/ stay too, or the adjustment would never reach the
+# verdict. What the agent writes anywhere else under e2e/scout/ (its own flows, kept flows) is untouched;
+# the harness (e2e/scout/_support) is laid out on purpose like the rest and goes back.
 set -euo pipefail
-PIECES=(e2e/scout/core .github/scout scripts/scout .github/agents/crew.json)
+PIECES=(e2e/scout/core e2e/scout/_support .github/scout scripts/scout .github/agents/crew.json)
 cmd="${1:-}"; dir="${2:-}"
 [ -n "$dir" ] || { echo "usage: pieces.sh snapshot|restore <dir>" >&2; exit 2; }
 
 agent_may_keep() {
+  if [ -n "${SCOUT_ADJUST:-}" ]; then case "$1" in e2e/scout/core/*) return 0 ;; esac; fi
   [ "${SCOUT_MODE:-}" = coverage ] || return 1
   case "$1" in
     .github/scout/core-flows.md) return 0 ;;

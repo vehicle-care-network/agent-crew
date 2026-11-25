@@ -22,8 +22,12 @@ const write = (root, path, text) => {
   writeFileSync(join(root, path), text);
 };
 const read = (root, path) => readFileSync(join(root, path), 'utf8');
-const run = (root, cmd, snap, mode = 'pr') =>
-  execFileSync('bash', [script, cmd, snap], { cwd: root, encoding: 'utf8', env: { ...process.env, SCOUT_MODE: mode } });
+const run = (root, cmd, snap, mode = 'pr', adjust = '') =>
+  execFileSync('bash', [script, cmd, snap], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, SCOUT_MODE: mode, SCOUT_ADJUST: adjust },
+  });
 
 const laidOut = {
   'e2e/scout/core/layout.spec.ts': "page.locator('#step-5'); /5\\. Landing/",
@@ -91,6 +95,40 @@ test('a coverage run keeps the core specs it adds and its core-flows.md, but not
     assert.equal(read(root, 'e2e/scout/core/_seed/booking.mjs'), 'its seed');
     assert.equal(read(root, '.github/scout/core-flows.md'), '| flow | core/booking.spec.ts |');
     assert.equal(read(root, 'e2e/scout/core/layout.spec.ts'), laidOut['e2e/scout/core/layout.spec.ts']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(dirname(snap), { recursive: true, force: true });
+  }
+});
+
+test('a run with ADJUSTMENTS keeps its rewrite of the core flow it names, but not edits elsewhere', () => {
+  const root = repo(laidOut);
+  const snap = join(mkdtempSync(join(tmpdir(), 'snap-')), 'pieces');
+  const adjust = 'layout: also check the Landing step shows the date';
+  try {
+    run(root, 'snapshot', snap, 'pr', adjust);
+    write(root, 'e2e/scout/core/layout.spec.ts', 'rewritten as asked');
+    write(root, 'e2e/scout/core/_seed/base.mjs', 'seed with a date');
+    write(root, '.github/agents/crew.json', '{"scout":{}}');
+    const out = run(root, 'restore', snap, 'pr', adjust).trim().split('\n');
+    assert.deepEqual(out, ['.github/agents/crew.json']);
+    assert.equal(read(root, 'e2e/scout/core/layout.spec.ts'), 'rewritten as asked');
+    assert.equal(read(root, 'e2e/scout/core/_seed/base.mjs'), 'seed with a date');
+    assert.equal(read(root, '.github/agents/crew.json'), '{}');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(dirname(snap), { recursive: true, force: true });
+  }
+});
+
+test('the harness the run laid out is put back too', () => {
+  const root = repo({ ...laidOut, 'e2e/scout/_support/scout.ts': "export const loginAs = '#email';" });
+  const snap = join(mkdtempSync(join(tmpdir(), 'snap-')), 'pieces');
+  try {
+    run(root, 'snapshot', snap);
+    write(root, 'e2e/scout/_support/scout.ts', "export const loginAs = '#user';");
+    assert.equal(run(root, 'restore', snap).trim(), 'e2e/scout/_support/scout.ts');
+    assert.equal(read(root, 'e2e/scout/_support/scout.ts'), "export const loginAs = '#email';");
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(dirname(snap), { recursive: true, force: true });
