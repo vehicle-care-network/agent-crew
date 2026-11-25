@@ -11,8 +11,8 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   flow made an Auth account and passed for the agent, then found that account already there and failed
   on a `toBe`. After the agent and before `record.sh`, Auth and Firestore are emptied through the
   emulators' own endpoints, and the base seed, core and feature seeds, and the PR's seeds run again,
-  just as they did before the agent. Runs with no agent are unchanged. If the reset fails, the run warns
-  and goes on as before. The GitHub Actions workflow (`scout-qa.yml`) is unchanged.
+  just as they did before the agent. Runs with no agent are unchanged. If the reset fails, or a seed fails
+  while running again, the run warns and goes on as before. The GitHub Actions workflow (`scout-qa.yml`) is unchanged.
 
 ## 1.14.1
 

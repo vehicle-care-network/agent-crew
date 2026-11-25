@@ -280,7 +280,7 @@ reseed() {
       curl -fsS -o /dev/null -X DELETE "http://$FIRESTORE_EMULATOR_HOST/emulator/v1/projects/$project/databases/(default)/documents" &&
       node scripts/scout/seed.mjs
   ) || { warn "Couldn't put the emulators back to the seeded state; the recorded run starts from what the agent left"; return 0; }
-  load_seeds
+  load_seeds || warn "A seed failed while putting the emulators back; the recorded run goes on with what loaded"
 }
 
 # ---- Scout explores, seeds and writes specs
