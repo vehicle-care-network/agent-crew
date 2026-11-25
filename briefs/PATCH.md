@@ -44,6 +44,8 @@ patterns in neighbouring code before changing code. Report progress to HQ in one
      `next dev` doesn't type-check, but Vercel does, and so does Scout before it tests anything.
    - `{{commands.test}}` for the tests you added or touched
 5. Write `agent-out/summary.md`: each point and what you did about it (fixed how, or why not).
+   If nothing needs changing, start it with one line saying why (for example, that the PR is already right
+   and the failure comes from somewhere else, and where): HQ reads that line to decide what to run next.
    **Tests are evidence, not obstacles.** Never weaken, skip, delete or loosen a test or a flow to make a run
    pass. If an existing test is itself wrong (it asserts the old behaviour the task changed, a selector
    moved), correct it and put one line per test in the summary, on its own line:

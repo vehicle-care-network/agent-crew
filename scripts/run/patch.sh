@@ -58,7 +58,13 @@ if [ -s agent-out/lesson.md ]; then printf '\n%s\n' "$(cat agent-out/lesson.md)"
 rm -rf agent-out/lesson.md
 git add -A
 # A merge with no file changes is still a commit worth pushing (it records the base as merged).
-if [ ! -f .git/MERGE_HEAD ]; then git diff --cached --quiet && die "Patch made no changes"; fi
+# With nothing to change, Patch's summary says why (often: the PR is right and the failure is elsewhere).
+# HQ gets that as the failure, not the bare line, so it doesn't send Patch back to the same PR.
+if [ ! -f .git/MERGE_HEAD ] && git diff --cached --quiet; then
+  why=$(tr '\n' ' ' < agent-out/summary.md 2>/dev/null | head -c 360 || true)
+  [ -z "$why" ] || FAIL_REASON="Patch made no changes: $why"
+  die "${FAIL_REASON:-Patch made no changes}"
+fi
 left=$(git diff --cached --name-only -z | xargs -0 -r grep -l -E '^(<<<<<<<|>>>>>>>) ' 2>/dev/null || true)
 [ -z "$left" ] || die "Conflict markers are still in: $left"
 case "$PATCH_REASON" in

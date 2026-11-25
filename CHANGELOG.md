@@ -18,6 +18,10 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   other core specs or the shared base seed. Scout's brief now says not to edit those pieces (with those two exceptions) and to report
   a core spec that looks wrong in `summary.md`. The Actions workflow (`scout-qa.yml`) doesn't restore them
   yet.
+- **When Patch has nothing to change, HQ hears why (sandbox runs).** "Patch made no changes" reached HQ
+  as a bare failure, so a Patch re-run on a PR that was already right failed the same way each time. The
+  failure HQ gets now carries the start of Patch's `summary.md`, and Patch's brief asks it to open that
+  summary with one line saying why nothing needed changing and where the failure comes from.
 
 ## 1.14.1
 
