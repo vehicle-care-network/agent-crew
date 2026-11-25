@@ -73,13 +73,16 @@ retries and partial failures.
   verdict.
 - `changes`: at least one real problem from the list above.
 
-**Files Patch may not change never hold a PR open.** Patch can't touch `.github/agents/LESSONS.md`,
-`.github/agents/risk-map.json`, `.github/workflows/` or the notes files, so a point about them would get
-no change and the review would never clear. Don't make it `changes` or an inline comment: mention it once
+**What Patch may not change never holds a PR open.** Patch can't touch `.github/agents/LESSONS.md`,
+`.github/agents/risk-map.json`, `.github/workflows/` or the notes files. A point about content in them
+that this PR doesn't itself change, or about a LESSONS.md entry the crew's workflow appended, would get no
+change and the review would never clear. Don't make it `changes` or an inline comment: mention it once
 in the summary as a note for a person ("For a person: …"), not again on later rounds, and decide the
-verdict on the rest. One exception: LESSONS.md entries this PR itself added (they show in
-`gh pr diff "$PR_NUMBER"`) that repeat each other or are wrong. Patch may fold those into one accurate
-entry, so ask for it once; if a later round still shows them, it becomes a note for a person.
+verdict on the rest. Lines this PR itself writes in workflows, `risk-map.json` or notes files (say, a
+token leak or a `pull_request_target` mistake in a workflow) are normal findings like any other. One
+exception for LESSONS.md: entries this PR added (they show in `gh pr diff "$PR_NUMBER"`) that repeat each
+other or are wrong. Patch may fold those into one accurate entry, so ask for it once; if a later round
+still shows them, it becomes a note for a person.
 
 Write `agent-out/review.json`:
 
