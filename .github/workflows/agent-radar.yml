@@ -349,7 +349,7 @@ jobs:
       - name: Send the diagnosis to HQ
         run: |
           test -s radar-out/diagnosis.json || { echo "::error::Radar didn't write radar-out/diagnosis.json"; exit 1; }
-          jq -e '(.where | IN("code","test","pr","repo","crew","hq","person","retry")) and (.cause | type == "string" and length > 0) and (.where != "pr" or ((.body // "") | type == "string" and length > 0))' radar-out/diagnosis.json >/dev/null
+          jq -e '(.where | IN("code","test","pr","repo","crew","hq","wait","moot","person","retry")) and (.cause | type == "string" and length > 0) and (.where != "pr" or ((.body // "") | type == "string" and length > 0)) and (.where != "wait" or ((.waitsOn.pr? // null) | type == "number"))' radar-out/diagnosis.json >/dev/null
           # Which brief wrote it: HQ acts on a mission's failure only from one that knows `code`, `test` and `sameAs`.
           jq '. + {brief: 2}' radar-out/diagnosis.json > radar-out/diagnosis.tmp && mv radar-out/diagnosis.tmp radar-out/diagnosis.json
           node .crew/scripts/agents/hq.mjs diagnosis-post "$REPAIR_ID" radar-out/diagnosis.json
