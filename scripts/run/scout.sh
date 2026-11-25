@@ -257,15 +257,18 @@ dry_run || node "$HQ_MJS" fakes-pull "$SCOUT_OUT/fakes/hq" >/dev/null
 env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
   bash .crew/scripts/scout/start-env.sh
 # The committed flows' own data, and the data the reused specs' seed scripts create.
+# Every seed runs even if one fails, and the function returns non-zero if any did: a caller with `||` sees
+# the failure (set -e is off inside it there), and the first load below still ends the run on it.
 load_seeds() (
   set -a; . ./.env.local; set +a
-  for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do [ -f "$f" ] && { say "Seeding $f"; node "$f"; }; done
+  rc=0
+  for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do [ -f "$f" ] || continue; say "Seeding $f"; node "$f" || rc=1; done
   # This PR's own seeds run whether its specs came back from HQ or were committed on its branch.
   for f in e2e/scout/_seed/*.mjs; do
     [ -f "$f" ] || continue
-    case "$(basename "$f")" in "pr-$NUMBER-"*) node "$f" ;; *) [ "$REUSED" != true ] || node "$f" ;; esac
+    case "$(basename "$f")" in "pr-$NUMBER-"*) node "$f" || rc=1 ;; *) [ "$REUSED" != true ] || node "$f" || rc=1 ;; esac
   done
-  true
+  exit "$rc"
 )
 load_seeds
 
