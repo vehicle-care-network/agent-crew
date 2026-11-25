@@ -78,6 +78,44 @@ mkdir -p .github/agents .github/scout scripts/scout e2e/scout
 if [ -d "$TOOLING/e2e/scout/features" ]; then mkdir -p e2e/scout/features; cp -Rn "$TOOLING/e2e/scout/features/." e2e/scout/features/; fi
 if [ -f e2e/scout/_support/scout.ts ]; then say "Using this PR's harness (e2e/scout/_support)"; elif [ -d "$TOOLING/e2e/scout/_support" ]; then cp -R "$TOOLING/e2e/scout/_support" e2e/scout/; fi
 rm -rf "$TOOLING"
+# What the PR itself changes among those pieces is the PR's to say. A mission that corrects a core spec (the
+# UI it drives moved), the seed, or the crew's config has to be tested with its correction: with main's
+# copy laid over it, the flows it fixed failed run after run and nothing Patch pushed could change that.
+# Only files the PR changes come back; every other core spec is still main's. A core spec a PR edits is
+# not taken on trust: HQ flags each existing test the crew changed and holds the PR until a person looks.
+if [ "$SCOUT_MODE" = pr ]; then
+  gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" --paginate --jq '.[] | "\(.status)\t\(.filename)"' 2>/dev/null | while IFS=$'\t' read -r status f; do
+    case "$f" in
+      .github/agents/crew.json|.github/scout/*|scripts/scout/*|e2e/scout/core/*) ;;
+      *) continue ;;
+    esac
+    if [ "$status" = removed ]; then rm -f "$f"; say "This PR removes $f: left out"
+    elif git checkout -q "$SHA" -- "$f" 2>/dev/null; then say "Using this PR's $f (the PR changes it)"; fi
+  done || warn "Couldn't read which Scout files this PR changes; main's copies are used"
+fi
+
+# ---- A repo with no app (`scout.app: false` in crew.json: a library, scripts, this crew itself). There is
+# nothing to open in a browser, so Scout's verdict is the repo's own tests: one flow, passed or failed,
+# with the first failing line. No agent, no emulators, no browser.
+if [ "$(jq -r 'if .scout.app == false then "no" else "yes" end' .github/agents/crew.json 2>/dev/null)" = no ]; then
+  if [ "$REPORTS_TO_HQ" != true ]; then say "This repo has no app for Scout to open (scout.app is false in crew.json). Nothing to run."; REPORTED=1; exit 0; fi
+  [ "$SCOUT_MODE" = smoke ] && die "This repo has no app for Scout to open (scout.app is false in crew.json), so a smoke test has nothing to do."
+  node "$HQ_MJS" qa running || warn "Couldn't tell HQ the run started"
+  TEST_CMD=$(crew_cmd test)
+  say "No app to open: running the repo's tests ($TEST_CMD)"
+  started=$(date +%s)
+  if (install_deps && bash -c "$TEST_CMD") > "$SCOUT_OUT/tests.log" 2>&1; then verdict=passed; else verdict=failed; fi
+  cat "$SCOUT_OUT/tests.log"
+  why=""
+  if [ "$verdict" = failed ]; then why=$(grep -m1 -iE '^not ok|✖|\bFAIL|\bError\b|syntax error' "$SCOUT_OUT/tests.log" || tail -n 1 "$SCOUT_OUT/tests.log"); fi
+  # The shape Playwright's JSON reporter writes, which is what the evidence step reads.
+  jq -n --arg status "$verdict" --arg title "The repo's own tests pass ($TEST_CMD)" --arg why "${why:0:400}" --argjson ms "$(( ($(date +%s) - started) * 1000 ))" \
+    '{suites: [{title: "", specs: [{file: "repo-tests", title: $title, tests: [{projectName: "tests", results: [{status: $status, duration: $ms, attachments: []} + (if $why == "" then {} else {error: {message: $why}} end)]}]}]}]}' > "$SCOUT_OUT/results.json"
+  if dry_run; then say "DRY_RUN: not sending the result ($verdict)"; exit 0; fi
+  if node .crew/scripts/scout/upload-evidence.mjs > "$SCOUT_OUT/evidence.txt" 2>&1; then EVIDENCE_SENT=1; cat "$SCOUT_OUT/evidence.txt"; else cat "$SCOUT_OUT/evidence.txt"; die "Scout's result never reached Agent HQ (the evidence step failed); send Scout again from the mission."; fi
+  say "Done: the repo's tests $verdict."
+  exit 0
+fi
 
 crew_render
 SCOUT_BASE_URL="http://localhost:$(scout_port)"

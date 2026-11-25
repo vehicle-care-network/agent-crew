@@ -1,0 +1,28 @@
+{
+  "$comment": "The crew's answers for itself: Agent HQ runs the crew on this repo too, so a fix Shep traces to the crew's scripts or briefs can be made, reviewed and tested here like any other.",
+  "product": "The agent crew: the briefs, shell scripts and reusable GitHub workflows that Agent HQ runs on each repo (Bolt, Iris, Patch, Scout, Nova, Radar, Rocket). Its users are the repos that call it and the people who run HQ.",
+  "node": "22",
+  "commands": {
+    "$comment": "No package.json: nothing to install, format or type-check. Lint is a syntax check of every shell script; the tests are Node's own runner over the scripts' tests.",
+    "install": "true",
+    "format": "true",
+    "lint": "for f in scripts/run/*.sh scripts/scout/*.sh; do bash -n \"$f\" || exit 1; done",
+    "typecheck": "true",
+    "test": "for f in scripts/run/*.sh scripts/scout/*.sh; do bash -n \"$f\" || exit 1; done && node --test scripts/scout/*.test.mjs"
+  },
+  "paths": {
+    "source": ["scripts/", "briefs/", "scout/", "templates/"],
+    "models": "scripts/setup/required.mjs",
+    "tests": "scripts/**/*.test.mjs"
+  },
+  "scout": {
+    "$comment": "No app to open in a browser: Scout's verdict here is the tests above (app: false). The rest are the keys every repo defines.",
+    "app": false,
+    "port": 3000,
+    "readyPath": "/",
+    "warm": [],
+    "env": {},
+    "firebaseRules": false,
+    "blockHosts": []
+  }
+}

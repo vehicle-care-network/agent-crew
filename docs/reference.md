@@ -249,6 +249,10 @@ HQ and no workflow.
   testing, HQ records a QA error). The script skips both with a warning if a repo lists them anyway. To
   keep the app under test from calling Claude, leave `ANTHROPIC_API_KEY` out of `scout.env`: Scout's
   environment never sets it.
+- `scout.app: false` (optional): the repo has no app to open in a browser (a library, scripts, the crew
+  itself). Scout then runs `commands.test` and reports that as its one flow, passed or failed with the
+  first failing line; a coverage or scheduled regression run does nothing. The other `scout` keys stay
+  (every repo defines them) and are not used.
 - `scout.fakesPort` (optional): the first fake service's port, 4600 when left out.
 - `.github/scout/fakes/<name>.json` (optional): the repo's own definition of a fake service, which
   replaces Agent HQ's of the same name on that branch. See [Fake services](#fake-services).
