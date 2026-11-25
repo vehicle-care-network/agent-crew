@@ -3,6 +3,17 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.2
+
+- **A point about a file Patch may not change no longer holds a review open.** On a PR whose QA rounds
+  each added a lesson, `LESSONS.md` ended up with four entries for the same PR. Iris asked for them to
+  be folded into one, Patch's brief forbade any edit to `LESSONS.md`, so every Patch round changed
+  nothing and the review never cleared. Iris now raises a point about `LESSONS.md`, `risk-map.json`,
+  workflows or notes files once as a note for a person in her summary, and approves if the rest is
+  fine. Patch may now edit, merge or remove the `LESSONS.md` entries the same PR added (every other
+  entry stays as it is), so Iris may ask him once to fold repeated ones. On a later round he edits his
+  own earlier entry instead of writing a new lesson that repeats or corrects it.
+
 ## 1.14.1
 
 - **Scout's restore of a PR's own Scout files is reliable, logged, and checked again before the recorded
