@@ -14,6 +14,13 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   files is compared with the PR's commit and put back if it changed (logged). A renamed core spec's old
   name, which is main's copy, is left out too. PRs that change no Scout files still get main's copies,
   and files a PR removes stay removed.
+- **Two more answers from `diagnose`: `wait` and `moot`.** A stage-3 mission started before stage 1 had
+  merged: Bolt rightly stopped, and the only readings on offer were a fix to HQ or a person, so Shep
+  opened fix missions for a mission that only had to wait. `wait` names the pull request it builds on
+  (`waitsOn`), and HQ holds the mission until that lands. An auto-fix mission for an error whose cause
+  was already fixed had nothing to change and waited for a person to say so: `moot` says nothing is
+  left to do, with what shows it, and HQ closes a mission that has no pull request. Needs an HQ that
+  knows both; an older one refuses the reading and goes by the error text.
 
 ## 1.14.0
 

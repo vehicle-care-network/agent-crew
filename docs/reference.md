@@ -315,12 +315,13 @@ of them, and writes `radar-out/diagnosis.json`:
 
 | Field | What it holds |
 | --- | --- |
-| `where` | `code` (the mission's own change), `test` (a test, flow or check that is itself wrong), `pr` (the pull request's description, not its code), `repo` (this repository's base branch, not the mission's change), `crew` (the crew's scripts or briefs), `hq` (how HQ started the run, or its image), `person` (a secret or setting only a person can change) or `retry` (nothing a change would fix) |
+| `where` | `code` (the mission's own change), `test` (a test, flow or check that is itself wrong), `pr` (the pull request's description, not its code), `repo` (this repository's base branch, not the mission's change), `crew` (the crew's scripts or briefs), `hq` (how HQ started the run, or its image), `wait` (a pull request the mission builds on has to land first), `moot` (nothing is left to do), `person` (a secret or setting only a person can change) or `retry` (nothing a change would fix) |
 | `cause` | One sentence: what failed and why |
 | `evidence` | The log lines and `file:line` references it rests on |
 | `fix` | What to change, as a task for whoever makes it |
 | `files` | The paths involved, in the place `where` names |
 | `body` | For `pr`: the text to add to the pull request's description |
+| `waitsOn` | For `wait`: `{ pr, repo? }`, the pull request to wait for |
 | `sameAs` | The id of a fix in `known` that already covers this cause, when there is one |
 
 `hq.mjs diagnosis-post <repairId> <file>` sends it, and HQ acts on `where`:
@@ -334,6 +335,8 @@ of them, and writes `radar-out/diagnosis.json`:
   otherwise), sends the new log back to Patch on the fix if it still fails, and keeps the fix applied to
   the mission's runs until it lands. Other missions that fail for the same cause (`sameAs`) wait on the
   one fix and run again with it.
+- `wait`: HQ holds the mission until the named pull request lands (when it is one of HQ's missions),
+  then runs it again. `moot`: HQ closes a mission that has no pull request, with the reason.
 - `person` stops the mission for a person, with what to do. `retry` runs the step again.
 
 Radar changes nothing itself. A smoke test whose Scout run breaks before testing goes the same way, as
