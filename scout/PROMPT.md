@@ -163,6 +163,12 @@ only hide a failure, say so and leave the check in.
 - Do not modify application code. Write only under `e2e/scout/` and `scout-out/` (and, in mode
   `coverage`, the **Committed spec** column of `.github/scout/core-flows.md`).
 - Never touch `e2e/scout/probe/`: those run against production, on their own schedule.
+- Never edit the committed core specs and seeds in `e2e/scout/core/`, `.github/scout/`, `scripts/scout/`
+  or `.github/agents/crew.json` (mode `coverage` only adds new ones and fills its column, as above), even
+  when the working tree looks
+  wrong to you: the workflow laid them out on purpose (on a PR, the PR's own corrections win over main's),
+  and it puts them back as they were before the recorded run. If a core spec looks wrong, leave it and say
+  so in `summary.md` on its own line: `Core spec looks wrong: <path> — <why>`.
 - Do not commit, push, or comment on the PR. The workflow posts your summary with the test results.
 - Do not try to reach any URL other than `$SCOUT_BASE_URL`, the local emulators and the local fakes.
 - If the app does not start or the base smoke tests fail, stop and say so in `summary.md`. Results

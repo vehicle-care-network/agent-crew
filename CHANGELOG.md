@@ -3,6 +3,18 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.2
+
+- **Scout's agent can no longer change the verdict by editing Scout's own pieces (sandbox runs).** A PR
+  that moved a step in the UI and corrected its core spec to match failed its two Landing flows, and
+  Patch found nothing to fix: Scout's agent had edited the PR's correct `e2e/scout/core/layout.spec.ts`
+  back to main's in the working tree, and the recorded run used that edited file. The core specs and
+  seeds, `.github/scout/`, `scripts/scout/` and `.github/agents/crew.json` are now copied just before the
+  agent starts and put back before the recorded run (`scripts/scout/pieces.sh`); files the agent added
+  among them are taken out, and the log names each one. The agent's own flows, kept flows and smoke specs
+  are untouched, and a coverage run keeps the core specs it adds and its `core-flows.md` column. Scout's
+  brief now says not to edit those pieces and to report a core spec that looks wrong in `summary.md`.
+
 ## 1.14.1
 
 - **Two more answers from `diagnose`: `wait` and `moot`.** A stage-3 mission started before stage 1 had
