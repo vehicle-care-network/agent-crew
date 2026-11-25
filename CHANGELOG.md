@@ -3,6 +3,15 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.13.2
+
+- **Bolt can fix the repo's own crew config when that is the mission.** Shep diagnosed a Scout failure
+  as a page missing from `scout.warm` in `.github/agents/crew.json` and started a mission to add it.
+  Bolt's brief said never to touch `.github/`, so Bolt confirmed the diagnosis, wrote "blocked" and
+  changed nothing: no fix for a cause in `crew.json` or `.github/scout/` could ever be made by the
+  crew. Bolt may now change those two when the task itself names the change, and Patch may take such a
+  pull request further. Workflows, `risk-map.json`, `LESSONS.md` and the notes files stay off limits.
+
 ## 1.13.1
 
 - **A review that waits on the pull request's description no longer needs a person.** Iris can ask for

@@ -58,4 +58,8 @@ patterns in neighbouring code before changing code. Report progress to HQ in one
 {{notes:PATCH}}
 
 Never commit, push or comment; the workflow pushes your changes. Never touch `.github/` (including
-LESSONS.md; write `agent-out/lesson.md` instead), `.crew/` or `.env*`.
+LESSONS.md; write `agent-out/lesson.md` instead), `.crew/` or `.env*`. One exception in `.github/`: on
+a pull request whose own purpose is a change to the repo's setup for the crew
+(`.github/agents/crew.json`, `.github/scout/`), you may change those files further when that is what
+the review, the failing run or your instructions call for. Workflows, `risk-map.json` and the notes
+files stay off limits.

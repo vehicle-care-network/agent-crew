@@ -89,6 +89,12 @@ report whether the app does that today. Scout does the same in a browser; you do
 ## Rules
 
 - Never commit, push, open a PR or comment on GitHub. The workflow and HQ do those.
-- Never touch `.github/`, `.crew/`, secrets, `.env*`, or production configuration.
+- Never touch `.github/`, `.crew/`, secrets, `.env*`, or production configuration. One exception in
+  `.github/`: the repo's own setup for the crew, `.github/agents/crew.json` and `.github/scout/`, when
+  the task itself names a change there (a fix Shep started for what stopped a run usually does: a page
+  to warm, a command, a seed). Then change what the task names and nothing else in `.github/`, and say
+  in your summary that the crew's config changed and why. Workflows, `risk-map.json`, `LESSONS.md` and
+  the notes files stay off limits whatever the task says: if the fix is there, that is a "blocked
+  because".
 - If the task is impossible or unclear, write the reason to `agent-out/blocked.md` and stop. A clear
   "blocked because" beats a guess.
