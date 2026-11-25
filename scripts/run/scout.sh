@@ -83,15 +83,37 @@ rm -rf "$TOOLING"
 # copy laid over it, the flows it fixed failed run after run and nothing Patch pushed could change that.
 # Only files the PR changes come back; every other core spec is still main's. A core spec a PR edits is
 # not taken on trust: HQ flags each existing test the crew changed and holds the PR until a person looks.
+# The list is read once, into a file, and only GitHub's status lines are kept: a failed or garbled lookup
+# says so loudly instead of passing as "this PR changes nothing". It is applied again just before the
+# recorded run, since Scout's agent has a shell and can leave one of these files as main's copy.
+PR_SCOUT_FILES=""
+use_pr_scout_files() {  # $1: "first" (say which copy each file is) or "again" (only say what had to be put back)
+  local status f old
+  [ -n "$PR_SCOUT_FILES" ] || return 0
+  while IFS=$'\t' read -r status f old; do
+    if [ "$status" = removed ]; then
+      if [ -e "$f" ]; then rm -rf "$f"; [ "$1" = first ] && say "This PR removes $f: left out" || say "Put back this PR's removal of $f (it was there again)"; fi
+      continue
+    fi
+    # A renamed file's old name is main's copy: it would run beside the PR's.
+    if [ "$status" = renamed ] && [ -n "$old" ] && [ -e "$old" ] && ! git cat-file -e "$SHA:$old" 2>/dev/null; then rm -rf "$old"; say "This PR renames $old to $f: the old name left out"; fi
+    if [ "$1" = first ]; then
+      if git checkout -q "$SHA" -- "$f"; then say "Using this PR's $f"; else warn "Couldn't take this PR's $f; main's copy is used"; fi
+    elif ! git diff --quiet "$SHA" -- "$f" 2>/dev/null || [ ! -e "$f" ]; then
+      if git checkout -q "$SHA" -- "$f"; then say "Put back this PR's $f (it had changed during the run)"; else warn "Couldn't put back this PR's $f"; fi
+    fi
+  done < "$PR_SCOUT_FILES"
+}
 if [ "$SCOUT_MODE" = pr ]; then
-  gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" --paginate --jq '.[] | "\(.status)\t\(.filename)"' 2>/dev/null | while IFS=$'\t' read -r status f; do
-    case "$f" in
-      .github/agents/crew.json|.github/scout/*|scripts/scout/*|e2e/scout/core/*) ;;
-      *) continue ;;
-    esac
-    if [ "$status" = removed ]; then rm -f "$f"; say "This PR removes $f: left out"
-    elif git checkout -q "$SHA" -- "$f" 2>/dev/null; then say "Using this PR's $f (the PR changes it)"; fi
-  done || warn "Couldn't read which Scout files this PR changes; main's copies are used"
+  PR_SCOUT_FILES=$(mktemp)
+  if gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" --paginate --jq '.[] | "\(.status)\t\(.filename)\t\(.previous_filename // "")"' > "$PR_SCOUT_FILES.all"; then
+    grep -E $'^(added|modified|removed|renamed|copied|changed)\t(\.github/agents/crew\.json|\.github/scout/|scripts/scout/|e2e/scout/core/)' "$PR_SCOUT_FILES.all" > "$PR_SCOUT_FILES" || true
+    if [ -s "$PR_SCOUT_FILES" ]; then use_pr_scout_files first; else say "This PR changes no Scout files: main's copies are used"; fi
+  else
+    warn "Couldn't read which Scout files this PR changes (gh api pulls/$NUMBER/files failed): main's copies of the core specs, seed and crew config are used, so a flow this PR corrects will fail as before"
+    : > "$PR_SCOUT_FILES"
+  fi
+  rm -f "$PR_SCOUT_FILES.all"
 fi
 
 # ---- A repo with no app (`scout.app: false` in crew.json: a library, scripts, this crew itself). There is
@@ -289,6 +311,7 @@ export SCOUT_AGENT_OUTCOME
 # ---- Run every Scout spec for the record: the verdict comes from this run, not the agent's own runs.
 # record.sh keeps the app up for it: a flow that failed only because the app wasn't answering is run again,
 # and a run where it kept going down is a broken run (HQ hears `qa error`), never a list of failed flows.
+use_pr_scout_files again
 if ! bash .crew/scripts/scout/record.sh; then
   if [ "$SCOUT_MODE" = pr ] && ! dry_run; then node .crew/scripts/scout/report.mjs || warn "Couldn't post the report on the PR"; fi
   die "$(cat "$SCOUT_OUT/broke.txt" 2>/dev/null || echo "Scout's recorded run broke before it had results")"
