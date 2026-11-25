@@ -311,17 +311,20 @@ of them, and writes `radar-out/diagnosis.json`:
 
 | Field | What it holds |
 | --- | --- |
-| `where` | `code` (the mission's own change), `test` (a test, flow or check that is itself wrong), `repo` (this repository's base branch, not the mission's change), `crew` (the crew's scripts or briefs), `hq` (how HQ started the run, or its image), `person` (a secret or setting only a person can change) or `retry` (nothing a change would fix) |
+| `where` | `code` (the mission's own change), `test` (a test, flow or check that is itself wrong), `pr` (the pull request's description, not its code), `repo` (this repository's base branch, not the mission's change), `crew` (the crew's scripts or briefs), `hq` (how HQ started the run, or its image), `person` (a secret or setting only a person can change) or `retry` (nothing a change would fix) |
 | `cause` | One sentence: what failed and why |
 | `evidence` | The log lines and `file:line` references it rests on |
 | `fix` | What to change, as a task for whoever makes it |
 | `files` | The paths involved, in the place `where` names |
+| `body` | For `pr`: the text to add to the pull request's description |
 | `sameAs` | The id of a fix in `known` that already covers this cause, when there is one |
 
 `hq.mjs diagnosis-post <repairId> <file>` sends it, and HQ acts on `where`:
 
 - `code` and `test` go to Patch on the mission's pull request, with the reading. A test Patch changes
   is flagged for a person on the mission.
+- `pr`: HQ adds `body` to the pull request's description itself (no agent of the crew may edit one)
+  and sends Iris to review again.
 - `repo`, `crew` and `hq` get a mission of their own in the repo the cause is in. HQ runs the failed step
   again with that fix (the crew from the fix's branch, when the fix is in the crew; once it has landed,
   otherwise), sends the new log back to Patch on the fix if it still fails, and keeps the fix applied to

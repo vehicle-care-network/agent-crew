@@ -217,6 +217,12 @@ Work from the evidence, backwards from where it stops:
      the mission set out to change, waits on something that was renamed, or was never right. Only with
      a pull request, and only when you can say why the test, not the code, is the wrong one. Patch
      corrects it there, and a person is shown every test that changed.
+   - `pr`: the code and the tests are fine, and what stands in the way is the pull request itself: a
+     reviewer's open point is something its description has to say (which flows are expected to fail
+     until merge, a step to do before landing, a "Test corrected" line). No agent of the crew may edit
+     a description, so more rounds of Patch change nothing; HQ can, and adds what you write in `body`.
+     Only with a pull request. Read the description first (`gh pr view $RADAR_PR --json body`) and
+     write only what it is missing.
    - `repo`: something in this repository that is not this mission's change, so it is wrong on the base
      branch too: its `crew.json`, Scout config, seed or start script, a pinned dependency, the app not
      starting on emulators, a test that was already failing. A mission of its own fixes it on the base
@@ -228,7 +234,10 @@ Work from the evidence, backwards from where it stops:
      the image is meant to carry, the request HQ sent, what HQ made of the agent's report).
    - `person`: only a person can fix it: a secret, a token's permission, billing, a setting in a
      dashboard, or a task that contradicts itself or can't be done as written. Say exactly which and
-     where.
+     where. This stops the mission until someone comes, so it is the answer of last resort: before you
+     give it, ask whether anyone in the crew or HQ could make the change (Patch the code or a test, HQ
+     the pull request's description, a fix mission the crew, HQ or the base branch). "An agent isn't
+     allowed to" is a reason to say who is, not to hand it to a person.
    - `retry`: nothing is wrong that a change would fix: a network blip, a rate limit, a registry that
      timed out, a runner that vanished. Only when the log shows it. This is the one answer that makes
      Shep run the same thing again, so "it might pass next time" is not a reason for it.
@@ -250,12 +259,15 @@ Write `radar-out/diagnosis.json`:
   "evidence": ["The quoted log line", "path/to/file:line and what it does"],
   "fix": "What to change, written as a task for the engineer who will make it: the file, the behaviour wanted, what must keep working, and how to tell it worked. No diff.",
   "files": ["scripts/run/scout.sh"],
+  "body": "only for pr: the text to add to the description, in Markdown, as it should read there",
   "sameAs": "the id from known.txt, only when step 6 found one"
 }
 ```
 
 `files` are paths in the place `where` names (for `crew`, without the `.crew/` prefix). For `person`
-and `retry`, `fix` says what to do and `files` is empty. If the evidence doesn't show the cause, say so
+and `retry`, `fix` says what to do and `files` is empty. For `pr`, `body` is the whole addition, a few
+sentences a reader of the pull request can take as they stand (HQ puts it under its own heading; no
+heading, no HTML comments), and `fix` says what it answers. If the evidence doesn't show the cause, say so
 in `cause`, give your best reading in `fix`, and still pick the most likely `where`: a guess that is
 labelled is more use than none. Leave `sameAs` out when no listed fix matches.
 
