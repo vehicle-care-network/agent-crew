@@ -299,26 +299,38 @@ new definition and no code. The format is in [`scout/FAKES.md`](../scout/FAKES.m
 
 `node --test scripts/scout/fakes.test.mjs` runs the server's tests.
 
-## Diagnosing a broken run
+## Diagnosing a failure
 
-A run that ends before the agent does its work (Scout never opens a browser because the app, the
-emulators or Chromium won't start) is not a finding about the code, and retrying it changes nothing.
-Agent HQ's mission manager, Shep, repairs those itself, and Radar's mode `diagnose` is its first step:
-HQ sends the end of the failed run's log (`log`), whose run it was (`agent`) and what it was for
-(`task`), and Radar reads the log against the code that ran, the crew's scripts under `.crew/` and the
-repo's side of them. It writes `radar-out/diagnosis.json`:
+Agent HQ's mission manager, Shep, takes every mission that fails and finds the root cause before anything
+runs again; a retry happens only when the cause is something no change would fix. Radar's mode `diagnose`
+is how it finds out. HQ sends whose run failed (`agent`, or `ci` for a check on the pull request), what
+it was for and what failed (`task`), the end of the run's log (`log`), the mission's pull request
+(`pr_number`, checked out so Radar reads the code that ran) and the fixes Shep already has under way
+(`known`). Radar reads the log against that code, the crew's scripts under `.crew/` and the repo's side
+of them, and writes `radar-out/diagnosis.json`:
 
 | Field | What it holds |
 | --- | --- |
-| `where` | `repo` (this repository), `crew` (the crew's scripts), `hq` (how HQ started the run, or its image), `person` (a secret or setting only a person can change) or `retry` (nothing a change would fix) |
+| `where` | `code` (the mission's own change), `test` (a test, flow or check that is itself wrong), `repo` (this repository's base branch, not the mission's change), `crew` (the crew's scripts or briefs), `hq` (how HQ started the run, or its image), `person` (a secret or setting only a person can change) or `retry` (nothing a change would fix) |
 | `cause` | One sentence: what failed and why |
 | `evidence` | The log lines and `file:line` references it rests on |
 | `fix` | What to change, as a task for whoever makes it |
 | `files` | The paths involved, in the place `where` names |
+| `sameAs` | The id of a fix in `known` that already covers this cause, when there is one |
 
-`hq.mjs diagnosis-post <repairId> <file>` sends it; HQ opens the fix where the cause is and runs the same
-thing again with the fix applied (the crew from the fix's branch, when the fix is in the crew). Radar
-changes nothing itself.
+`hq.mjs diagnosis-post <repairId> <file>` sends it, and HQ acts on `where`:
+
+- `code` and `test` go to Patch on the mission's pull request, with the reading. A test Patch changes
+  is flagged for a person on the mission.
+- `repo`, `crew` and `hq` get a mission of their own in the repo the cause is in. HQ runs the failed step
+  again with that fix (the crew from the fix's branch, when the fix is in the crew; once it has landed,
+  otherwise), sends the new log back to Patch on the fix if it still fails, and keeps the fix applied to
+  the mission's runs until it lands. Other missions that fail for the same cause (`sameAs`) wait on the
+  one fix and run again with it.
+- `person` stops the mission for a person, with what to do. `retry` runs the step again.
+
+Radar changes nothing itself. A smoke test whose Scout run breaks before testing goes the same way, as
+it has since 1.12.
 
 ## Models
 

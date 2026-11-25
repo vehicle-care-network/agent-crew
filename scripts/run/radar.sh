@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Radar in a sandbox: `.github/workflows/agent-radar.yml`'s jobs as one script. See common.sh for the
-# environment. PARAMS: { mode: triage|study|audit|label|fake|diagnose, mission_id, task, report_url, scope, pr_number, fake_id, service, repair_id, agent, log }.
+# environment. PARAMS: { mode: triage|study|audit|label|fake|diagnose, mission_id, task, report_url, scope, pr_number, fake_id, service, repair_id, agent, log, known }.
 #   label    the impact label on a PR from .github/agents/risk-map.json (no AI, seconds); HQ sends it on
 #            the repo's PR events once the repo's agents are off GitHub Actions
 #   triage   the impact of a new HQ mission before it's built
@@ -8,9 +8,10 @@
 #   audit    the weekly or monthly audit (`scope`): ideas to HQ's inbox; HQ's tick starts it on schedule
 #   fake     a fake service for Scout's tests, drafted from how the code calls the real one (`service`,
 #            with the owner's notes in `task`); goes to HQ's Fakes page as `fake_id`
-#   diagnose why a run of the crew broke before it did its work (`agent`'s run, the end of its log in
-#            `log`, what it was for in `task`): where the cause is and what to change, to HQ as
-#            `repair_id`. Shep, HQ's mission manager, asks for it and sends the fix on from there
+#   diagnose the root cause of a failure on a mission (`agent`'s run, the end of its log in `log`, what
+#            it was for and what failed in `task`, the mission's PR in `pr_number`, the fixes already
+#            under way in `known`): where the cause is and what to change, to HQ as `repair_id`.
+#            Shep, HQ's mission manager, asks for it and sends the fix on from there
 # (The daily "is main due for a regression run?" check lives in HQ itself for these repos: it reads HQ's
 # own record of the last run, where the workflow read GitHub's run list.)
 AGENT=radar
@@ -83,6 +84,18 @@ if [ "$MODE" = diagnose ]; then
   export RADAR_FAILED_AGENT="$(param agent)"
   param log > radar-out/run.log
   [ -s radar-out/run.log ] || die "diagnose needs the failed run's log"
+  param known > radar-out/known.txt
+  [ -s radar-out/known.txt ] || rm -f radar-out/known.txt
+  # A mission with a pull request: Radar reads the code that ran. HQ's sandbox clones that branch already;
+  # anywhere else the head is fetched here. A checkout that stays on the base branch is said, not fatal.
+  RADAR_PR=$(param pr_number)
+  if [[ "$RADAR_PR" =~ ^[0-9]+$ ]]; then
+    head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$RADAR_PR" --jq .head.sha 2>/dev/null || true)
+    if [ -n "$head" ] && [ "$(git rev-parse HEAD)" != "$head" ]; then
+      git fetch --quiet origin "pull/$RADAR_PR/head" && git checkout --quiet --detach FETCH_HEAD || say "Couldn't check out PR #$RADAR_PR; reading the base branch"
+    fi
+    export RADAR_PR
+  fi
   # HQ waits on the diagnosis, so a run that dies says so.
   DIAGNOSIS_SENT=""
   diagnose_finish() {
@@ -92,15 +105,21 @@ if [ "$MODE" = diagnose ]; then
   }
   trap diagnose_finish EXIT
   PROMPT='Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: diagnose.
-The end of the failed run is in radar-out/run.log. Whose run it was is in the environment variable RADAR_FAILED_AGENT; what it was for is in RADAR_TASK.'
+The end of the failed run is in radar-out/run.log. Whose run it was is in the environment variable RADAR_FAILED_AGENT; what it was for, and what failed, is in RADAR_TASK.'
+  [ -n "${RADAR_PR:-}" ] && PROMPT="$PROMPT
+The mission's pull request is #$RADAR_PR (environment variable RADAR_PR); this checkout is its branch."
+  [ -s radar-out/known.txt ] && PROMPT="$PROMPT
+Fixes already under way are listed in radar-out/known.txt."
   if dry_run; then
     jq -n '{where:"retry",cause:"DRY_RUN",evidence:[],fix:""}' > radar-out/diagnosis.json
   else
     run_claude diagnose "$PROMPT" "$MODEL" 80 Bash,Read,Glob,Grep,Write,WebFetch
   fi
   test -s radar-out/diagnosis.json || { FAIL_REASON="Radar didn't write a diagnosis (radar-out/diagnosis.json). See $RUN_URL"; die "$FAIL_REASON"; }
-  jq -e '(.where | IN("repo","crew","hq","person","retry")) and (.cause | type == "string" and length > 0)' radar-out/diagnosis.json >/dev/null \
-    || { FAIL_REASON="Radar's diagnosis names no cause, or a place other than repo, crew, hq, person or retry"; die "$FAIL_REASON"; }
+  jq -e '(.where | IN("code","test","repo","crew","hq","person","retry")) and (.cause | type == "string" and length > 0)' radar-out/diagnosis.json >/dev/null \
+    || { FAIL_REASON="Radar's diagnosis names no cause, or a place other than code, test, repo, crew, hq, person or retry"; die "$FAIL_REASON"; }
+  # Which brief wrote it: HQ acts on a mission's failure only from one that knows `code`, `test` and `sameAs`.
+  jq '. + {brief: 2}' radar-out/diagnosis.json > radar-out/diagnosis.tmp && mv radar-out/diagnosis.tmp radar-out/diagnosis.json
   if dry_run; then say "DRY_RUN: would send the diagnosis ($(jq -r .where radar-out/diagnosis.json))"; exit 0; fi
   node "$HQ_MJS" diagnosis-post "$REPAIR_ID" radar-out/diagnosis.json
   DIAGNOSIS_SENT=1
