@@ -256,17 +256,10 @@ dry_run || node "$HQ_MJS" fakes-pull "$SCOUT_OUT/fakes/hq" >/dev/null
 # ---- Start the app on emulators. The app under test never sees the run's credentials.
 env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
   bash .crew/scripts/scout/start-env.sh
-# The committed flows' own data, and the data the reused specs' seed scripts create.
-(
-  set -a; . ./.env.local; set +a
-  for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do [ -f "$f" ] && { say "Seeding $f"; node "$f"; }; done
-  # This PR's own seeds run whether its specs came back from HQ or were committed on its branch.
-  for f in e2e/scout/_seed/*.mjs; do
-    [ -f "$f" ] || continue
-    case "$(basename "$f")" in "pr-$NUMBER-"*) node "$f" ;; *) [ "$REUSED" != true ] || node "$f" ;; esac
-  done
-  true
-)
+# The committed flows' own data, and the data the reused specs' seed scripts create. record.sh runs the
+# same seeds again before the recorded run.
+export SCOUT_REUSED="$REUSED"
+bash .crew/scripts/scout/seed.sh
 
 # ---- Scout explores, seeds and writes specs
 SCOUT_AGENT_OUTCOME=skipped
@@ -293,7 +286,7 @@ EOF
   if dry_run; then
     say "DRY_RUN: skipping Scout's agent"
   else
-    export SCOUT_FOCUS="$FOCUS" SCOUT_BUDGET="$BUDGET" SCOUT_REUSED="$REUSED"
+    export SCOUT_FOCUS="$FOCUS" SCOUT_BUDGET="$BUDGET"
     case "$SCOUT_MODE" in regression) TASK=regression ;; coverage) TASK=coverage ;; smoke) TASK=smoke ;; *) TASK=qa ;; esac
     run_claude "$TASK" "$PROMPT" "$MODEL" "$TURNS" "Bash,Read,Write,Edit,Glob,Grep,mcp__playwright" --mcp-config .crew/scout/mcp.json
     SCOUT_AGENT_OUTCOME=$( [ "$CLAUDE_EXIT" -eq 0 ] && echo success || echo failure)

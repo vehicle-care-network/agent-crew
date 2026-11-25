@@ -3,6 +3,18 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.2
+
+- **Scout's recorded run starts from the seeded data again (sandbox runs).** The seeds ran once, before
+  Scout's agent; the agent then ran the PR's specs, and a flow that saves changed the document the
+  read-only flows open. The recorded run inherited that, so on a PR whose app was correct two of three
+  flows failed (a reminder still showing the saved "2 hours"), round after round. The seed loop is now
+  `scripts/scout/seed.sh` (same seeds, same rules: core and features, this PR's `pr-<n>-*`, and the
+  rest when the specs came back from the previous run), and `record.sh` runs it once just before the
+  flows, not before the re-run of flows the app wasn't answering for. Seeds must stay idempotent, as
+  they always had to. The GitHub Actions workflow's `record.sh` step re-runs the core and feature seeds
+  too; it re-runs the PR's own once that step is given `PR_NUMBER` and `SCOUT_REUSED`.
+
 ## 1.14.1
 
 - **Scout's restore of a PR's own Scout files is reliable, logged, and checked again before the recorded
