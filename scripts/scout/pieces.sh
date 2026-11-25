@@ -6,20 +6,38 @@
 # prints each file it put back or took out, one per line.
 #
 #   bash .crew/scripts/scout/pieces.sh snapshot <dir>
-#   bash .crew/scripts/scout/pieces.sh restore <dir>     # env SCOUT_MODE, SCOUT_ADJUST
+#   bash .crew/scripts/scout/pieces.sh restore <dir>     # env SCOUT_MODE, SCOUT_ADJUST, SCOUT_ONLY
 #
 # A coverage run's job is to add core specs (and their seeds) and fill in `.github/scout/core-flows.md`:
 # those stay. A run a person sent with ADJUSTMENTS is asked to rewrite the named flow's spec and seed, which
-# may be a core one: its changes under e2e/scout/core/ stay too, or the adjustment would never reach the
-# verdict. What the agent writes anywhere else under e2e/scout/ (its own flows, kept flows) is untouched;
+# may be a core one: that spec and its seed stay too, or the adjustment would never reach the verdict; its
+# edits to any other core spec go back. What the agent writes anywhere else under e2e/scout/ (its own flows, kept flows) is untouched;
 # the harness (e2e/scout/_support) is laid out on purpose like the rest and goes back.
 set -euo pipefail
 PIECES=(e2e/scout/core e2e/scout/_support .github/scout scripts/scout .github/agents/crew.json)
 cmd="${1:-}"; dir="${2:-}"
 [ -n "$dir" ] || { echo "usage: pieces.sh snapshot|restore <dir>" >&2; exit 2; }
 
+# The core specs (and their seeds, `core/_seed/<slug>.mjs`) of the flows ADJUSTMENTS asks to change: those
+# named under SCOUT_ONLY (`Describe › test`), found by the test's quoted title in the specs as laid out.
+# Any other core spec the run edits goes back, or an adjustment could revert a PR's corrected spec.
+ADJUSTED=()
+adjusted_specs() {
+  [ -n "${SCOUT_ADJUST:-}" ] && [ -n "${SCOUT_ONLY:-}" ] && [ -d "$dir/e2e/scout/core" ] || return 0
+  local line t spec
+  while IFS= read -r line; do
+    t="${line##* › }"; t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+    [ -n "$t" ] || continue
+    while IFS= read -r spec; do
+      spec="${spec#"$dir/"}"
+      ADJUSTED+=("$spec" "e2e/scout/core/_seed/$(basename "$spec" .spec.ts).mjs")
+    done < <(grep -rlF --include='*.spec.ts' -e "'$t'" -e "\"$t\"" -e "\`$t\`" "$dir/e2e/scout/core" || true)
+  done < <(head -10 <<<"$SCOUT_ONLY")
+}
+
 agent_may_keep() {
-  if [ -n "${SCOUT_ADJUST:-}" ]; then case "$1" in e2e/scout/core/*) return 0 ;; esac; fi
+  local a
+  for a in ${ADJUSTED[@]+"${ADJUSTED[@]}"}; do [ "$1" = "$a" ] && return 0; done
   [ "${SCOUT_MODE:-}" = coverage ] || return 1
   case "$1" in
     .github/scout/core-flows.md) return 0 ;;
@@ -38,6 +56,7 @@ case "$cmd" in
     ;;
   restore)
     [ -d "$dir" ] || { echo "No snapshot at $dir" >&2; exit 1; }
+    adjusted_specs
     for p in "${PIECES[@]}"; do
       # What was there: what the agent changed or removed goes back.
       if [ -e "$dir/$p" ]; then

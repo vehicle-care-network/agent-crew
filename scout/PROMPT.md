@@ -154,9 +154,10 @@ again (one timed out, one looked flaky, one was fixed by hand) and nothing else.
 
 When `ADJUSTMENTS` is set, the person wants the named flow changed, not just run again: it checks the
 wrong thing, misses a step, uses the wrong account, should also cover a case. Rewrite that spec (and its
-seed) to do what they ask, keeping what still applies, then run it as above. Say in `summary.md` what you
-changed in the flow and how it came out. Never loosen an assertion to make it pass; if the request would
-only hide a failure, say so and leave the check in.
+seed) to do what they ask, keeping what still applies, then run it as above. For a core flow, only its
+spec and `e2e/scout/core/_seed/<flow-slug>.mjs` are kept for the record: put extra data there, not in the
+shared base seed. Say in `summary.md` what you changed in the flow and how it came out. Never loosen an
+assertion to make it pass; if the request would only hide a failure, say so and leave the check in.
 
 ## Rules
 

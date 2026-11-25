@@ -14,7 +14,8 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   run (`scripts/scout/pieces.sh`); files the agent added among them are taken out, and the log names each
   one. The agent's own flows, kept flows and smoke specs are untouched, a coverage run keeps the core specs
   it adds and its `core-flows.md` column, and a run sent with ADJUSTMENTS keeps its rewrite of the core
-  flow it names. Scout's brief now says not to edit those pieces (with those two exceptions) and to report
+  flow it names (the spec holding that flow's test, and its `core/_seed/<slug>.mjs`) but not edits to
+  other core specs or the shared base seed. Scout's brief now says not to edit those pieces (with those two exceptions) and to report
   a core spec that looks wrong in `summary.md`. The Actions workflow (`scout-qa.yml`) doesn't restore them
   yet.
 

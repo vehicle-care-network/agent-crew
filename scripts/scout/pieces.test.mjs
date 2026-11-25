@@ -22,11 +22,11 @@ const write = (root, path, text) => {
   writeFileSync(join(root, path), text);
 };
 const read = (root, path) => readFileSync(join(root, path), 'utf8');
-const run = (root, cmd, snap, mode = 'pr', adjust = '') =>
+const run = (root, cmd, snap, mode = 'pr', adjust = '', only = '') =>
   execFileSync('bash', [script, cmd, snap], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, SCOUT_MODE: mode, SCOUT_ADJUST: adjust },
+    env: { ...process.env, SCOUT_MODE: mode, SCOUT_ADJUST: adjust, SCOUT_ONLY: only },
   });
 
 const laidOut = {
@@ -102,18 +102,32 @@ test('a coverage run keeps the core specs it adds and its core-flows.md, but not
 });
 
 test('a run with ADJUSTMENTS keeps its rewrite of the core flow it names, but not edits elsewhere', () => {
-  const root = repo(laidOut);
+  const root = repo({
+    ...laidOut,
+    'e2e/scout/core/layout.spec.ts': "test('shows the steps', () => { page.locator('#step-5'); });",
+    'e2e/scout/core/_seed/layout.mjs': 'layout seed',
+    'e2e/scout/core/booking.spec.ts': "test('books a slot', () => { page.locator('#slot'); });",
+  });
   const snap = join(mkdtempSync(join(tmpdir(), 'snap-')), 'pieces');
   const adjust = 'layout: also check the Landing step shows the date';
+  const only = 'Layout › shows the steps';
   try {
-    run(root, 'snapshot', snap, 'pr', adjust);
+    run(root, 'snapshot', snap, 'pr', adjust, only);
     write(root, 'e2e/scout/core/layout.spec.ts', 'rewritten as asked');
-    write(root, 'e2e/scout/core/_seed/base.mjs', 'seed with a date');
+    write(root, 'e2e/scout/core/_seed/layout.mjs', 'seed with a date');
+    write(root, 'e2e/scout/core/booking.spec.ts', "test('books a slot', () => { page.locator('#old-slot'); });");
+    write(root, 'e2e/scout/core/_seed/base.mjs', 'shared seed, edited');
     write(root, '.github/agents/crew.json', '{"scout":{}}');
-    const out = run(root, 'restore', snap, 'pr', adjust).trim().split('\n');
-    assert.deepEqual(out, ['.github/agents/crew.json']);
+    const out = run(root, 'restore', snap, 'pr', adjust, only).trim().split('\n').sort();
+    assert.deepEqual(out, [
+      '.github/agents/crew.json',
+      'e2e/scout/core/_seed/base.mjs',
+      'e2e/scout/core/booking.spec.ts',
+    ]);
     assert.equal(read(root, 'e2e/scout/core/layout.spec.ts'), 'rewritten as asked');
-    assert.equal(read(root, 'e2e/scout/core/_seed/base.mjs'), 'seed with a date');
+    assert.equal(read(root, 'e2e/scout/core/_seed/layout.mjs'), 'seed with a date');
+    assert.equal(read(root, 'e2e/scout/core/booking.spec.ts'), "test('books a slot', () => { page.locator('#slot'); });");
+    assert.equal(read(root, 'e2e/scout/core/_seed/base.mjs'), 'seed');
     assert.equal(read(root, '.github/agents/crew.json'), '{}');
   } finally {
     rmSync(root, { recursive: true, force: true });
