@@ -116,8 +116,8 @@ Fixes already under way are listed in radar-out/known.txt."
     run_claude diagnose "$PROMPT" "$MODEL" 80 Bash,Read,Glob,Grep,Write,WebFetch
   fi
   test -s radar-out/diagnosis.json || { FAIL_REASON="Radar didn't write a diagnosis (radar-out/diagnosis.json). See $RUN_URL"; die "$FAIL_REASON"; }
-  jq -e '(.where | IN("code","test","repo","crew","hq","person","retry")) and (.cause | type == "string" and length > 0)' radar-out/diagnosis.json >/dev/null \
-    || { FAIL_REASON="Radar's diagnosis names no cause, or a place other than code, test, repo, crew, hq, person or retry"; die "$FAIL_REASON"; }
+  jq -e '(.where | IN("code","test","pr","repo","crew","hq","person","retry")) and (.cause | type == "string" and length > 0) and (.where != "pr" or ((.body // "") | type == "string" and length > 0))' radar-out/diagnosis.json >/dev/null \
+    || { FAIL_REASON="Radar's diagnosis names no cause, or a place other than code, test, pr, repo, crew, hq, person or retry, or says pr with no body to add"; die "$FAIL_REASON"; }
   # Which brief wrote it: HQ acts on a mission's failure only from one that knows `code`, `test` and `sameAs`.
   jq '. + {brief: 2}' radar-out/diagnosis.json > radar-out/diagnosis.tmp && mv radar-out/diagnosis.tmp radar-out/diagnosis.json
   if dry_run; then say "DRY_RUN: would send the diagnosis ($(jq -r .where radar-out/diagnosis.json))"; exit 0; fi

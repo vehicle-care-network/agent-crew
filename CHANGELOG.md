@@ -3,6 +3,17 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.13.1
+
+- **A review that waits on the pull request's description no longer needs a person.** Iris can ask for
+  something the description has to say (which core flows are expected to fail until merge). Patch
+  changes code, never a description, so three rounds went by and Radar's reading of the stuck mission
+  was `person`: correct that no agent could make the edit, and the mission stopped. `diagnose` has a
+  new answer, `pr`, with the text to add in `body`; Agent HQ adds it to the description itself and
+  sends Iris back. The brief also treats `person` as the last resort: before giving it, Radar asks
+  whether anyone in the crew or HQ could make the change. Needs an HQ that knows `pr`; an older one
+  refuses the reading and goes by the error text.
+
 ## 1.13.0
 
 - **Radar finds the root cause of any failure on a mission** (mode `diagnose`). Until now it read one
