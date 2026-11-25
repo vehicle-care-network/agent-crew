@@ -84,7 +84,13 @@ rm -rf "$TOOLING"
 # Only files the PR changes come back; every other core spec is still main's. A core spec a PR edits is
 # not taken on trust: HQ flags each existing test the crew changed and holds the PR until a person looks.
 if [ "$SCOUT_MODE" = pr ]; then
-  gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" --paginate --jq '.[] | "\(.status)\t\(.filename)"' 2>/dev/null | while IFS=$'\t' read -r status f; do
+  gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" --paginate --jq '.[] | "\(.status)\t\(.filename)\t\(.previous_filename // "")"' 2>/dev/null | while IFS=$'\t' read -r status f prev; do
+    # A renamed file's old path is main's copy, laid over above: it would run beside the PR's renamed one.
+    if [ "$status" = renamed ] && [ -n "$prev" ]; then
+      case "$prev" in
+        .github/agents/crew.json|.github/scout/*|scripts/scout/*|e2e/scout/core/*) rm -f "$prev"; say "This PR renames $prev to $f: main's copy left out" ;;
+      esac
+    fi
     case "$f" in
       .github/agents/crew.json|.github/scout/*|scripts/scout/*|e2e/scout/core/*) ;;
       *) continue ;;
@@ -100,8 +106,10 @@ fi
 if [ "$(jq -r 'if .scout.app == false then "no" else "yes" end' .github/agents/crew.json 2>/dev/null)" = no ]; then
   if [ "$REPORTS_TO_HQ" != true ]; then say "This repo has no app for Scout to open (scout.app is false in crew.json). Nothing to run."; REPORTED=1; exit 0; fi
   [ "$SCOUT_MODE" = smoke ] && die "This repo has no app for Scout to open (scout.app is false in crew.json), so a smoke test has nothing to do."
-  node "$HQ_MJS" qa running || warn "Couldn't tell HQ the run started"
   TEST_CMD=$(crew_cmd test)
+  # `bash -c ""` exits 0: with no test command the repo's tests would be reported as passed.
+  [ -n "$TEST_CMD" ] || die "This repo has no app (scout.app is false in crew.json) and no commands.test to run instead, so Scout has nothing to test."
+  node "$HQ_MJS" qa running || warn "Couldn't tell HQ the run started"
   say "No app to open: running the repo's tests ($TEST_CMD)"
   started=$(date +%s)
   if (install_deps && bash -c "$TEST_CMD") > "$SCOUT_OUT/tests.log" 2>&1; then verdict=passed; else verdict=failed; fi
