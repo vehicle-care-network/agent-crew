@@ -3,6 +3,18 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.1
+
+- **Scout's restore of a PR's own Scout files is reliable, logged, and checked again before the recorded
+  run (sandbox runs).** A PR that corrected `e2e/scout/core/new-mission.spec.ts` still had main's old copy
+  run against it, and Patch found nothing to fix. The list of files the PR changes is now read once into
+  a file, with errors shown and only GitHub's status lines kept, so a failed lookup warns instead of
+  passing as "nothing changed". The log says `Using this PR's <file>` for each one, or `This PR changes no
+  Scout files`. Just before `record.sh`, after Scout's agent (which has a shell) is done, each of those
+  files is compared with the PR's commit and put back if it changed (logged). A renamed core spec's old
+  name, which is main's copy, is left out too. PRs that change no Scout files still get main's copies,
+  and files a PR removes stay removed.
+
 ## 1.14.0
 
 - **A PR's own corrections to Scout's pieces are tested (sandbox runs).** Scout lays main's
