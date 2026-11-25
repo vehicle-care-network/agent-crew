@@ -232,6 +232,16 @@ Work from the evidence, backwards from where it stops:
      thing). True when any repo with the same setup would fail the same way.
    - `hq`: how HQ started the run or built its image (the `[Sandbox]` or `[Image]` part, a missing tool
      the image is meant to carry, the request HQ sent, what HQ made of the agent's report).
+   - `wait`: nothing is broken and nothing needs changing: the mission was started before a pull
+     request it builds on had landed (a later stage of a staged change, a follow-up to a PR still in
+     review), so the code it extends isn't on the base branch yet. Check it (`gh pr view <n> --json
+     state,mergedAt`) and name that pull request in `waitsOn`. HQ holds the mission until it lands and
+     then runs it again. Not for a prerequisite nobody has started: that is `person`.
+   - `moot`: nothing is left to do. The goal is already met on the base branch, or what the mission was
+     for can no longer be acted on (an error whose cause was fixed or can't be recovered, a duplicate of
+     work that landed). Say what makes it so, with the commit or file that shows it. HQ closes a
+     mission that has no pull request; one that has is left to a person. Use it only when you can show
+     there is nothing to do, never because the task is hard.
    - `person`: only a person can fix it: a secret, a token's permission, billing, a setting in a
      dashboard, or a task that contradicts itself or can't be done as written. Say exactly which and
      where. This stops the mission until someone comes, so it is the answer of last resort: before you
@@ -260,12 +270,13 @@ Write `radar-out/diagnosis.json`:
   "fix": "What to change, written as a task for the engineer who will make it: the file, the behaviour wanted, what must keep working, and how to tell it worked. No diff.",
   "files": ["scripts/run/scout.sh"],
   "body": "only for pr: the text to add to the description, in Markdown, as it should read there",
+  "waitsOn": { "pr": 1205, "repo": "only for wait; repo only when the pull request is in another repo (owner/name)" },
   "sameAs": "the id from known.txt, only when step 6 found one"
 }
 ```
 
-`files` are paths in the place `where` names (for `crew`, without the `.crew/` prefix). For `person`
-and `retry`, `fix` says what to do and `files` is empty. For `pr`, `body` is the whole addition, a few
+`files` are paths in the place `where` names (for `crew`, without the `.crew/` prefix). For `person`,
+`retry`, `wait` and `moot`, `fix` says what to do (or is empty) and `files` is empty. For `pr`, `body` is the whole addition, a few
 sentences a reader of the pull request can take as they stand (HQ puts it under its own heading; no
 heading, no HTML comments), and `fix` says what it answers. If the evidence doesn't show the cause, say so
 in `cause`, give your best reading in `fix`, and still pick the most likely `where`: a guess that is
