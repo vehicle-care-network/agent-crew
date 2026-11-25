@@ -92,7 +92,18 @@ crew_render() {
       git archive "origin/$base" .github/agents | tar -x
     fi
   fi
-  node .crew/scripts/setup/render.mjs
+  # A config problem is deterministic and says what to fix: its [CrewSetup] line becomes the failure HQ
+  # shows on the mission, instead of the generic one. The stderr still reaches the log.
+  local errs code=0
+  errs=$(mktemp)
+  node .crew/scripts/setup/render.mjs 2>"$errs" || code=$?
+  cat "$errs" >&2
+  if [ "$code" -ne 0 ]; then
+    FAIL_REASON=$(grep -m1 '^\[CrewSetup\]' "$errs" || true)
+    rm -f "$errs"
+    exit "$code"
+  fi
+  rm -f "$errs"
   use_node
 }
 # The repo's Node, as setup-node gives a workflow: `.nvmrc`, else crew.json "node". Nothing here names a
