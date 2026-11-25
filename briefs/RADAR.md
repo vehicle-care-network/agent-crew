@@ -164,39 +164,82 @@ mkdir -p /tmp/try/scout-out/fakes/hq && cp radar-out/fake.json /tmp/try/scout-ou
 
 A service the code never calls is a definition with no routes and an `about` that says so.
 
-## Mode `diagnose`: why a run of the crew broke
+## Mode `diagnose`: the root cause of a failure
 
-A run of one of the agents (`$RADAR_FAILED_AGENT`) ended before it did its work: Scout never opened a
-browser, Bolt never got to the task. `$RADAR_TASK` says what the run was for. The end of its output is
-in `radar-out/run.log`. Shep, HQ's mission manager, wants to know why and where the fix belongs, so it
-can send someone to make it and then run the same thing again. You diagnose; you change nothing.
+Something the crew was doing for a mission failed, and Shep, HQ's mission manager, will not run it again
+until it knows why. Your answer decides what happens next: who is sent to fix it and where, or whether a
+plain retry is all it needs. Shep acts on what you write with nobody checking it first, so a wrong
+`where` sends a fix to the wrong place and the mission fails the same way again. You diagnose; you
+change nothing.
 
-Work from the log, backwards from where it stops:
+What you are given:
+
+- `$RADAR_FAILED_AGENT`: whose run failed (`bolt`, `iris`, `patch`, `scout`, `nova`, `radar`, `rocket`),
+  or `ci` when it is a check on the pull request.
+- `$RADAR_TASK`: what the run was for and what failed as HQ saw it: the mission, its pull request and
+  step, the error or the failing flows and checks, and links to the runs.
+- `radar-out/run.log`: the end of the failed run's output. When HQ kept none, it says so and names the
+  run instead; for a GitHub Actions run, read the log yourself (`gh run view <id> --log-failed`) when
+  the token lets you.
+- `$RADAR_PR`, when the mission has a pull request: this checkout is that pull request's branch, so the
+  code here is the code that ran. `git diff origin/<base>...HEAD` is the mission's own change.
+- `radar-out/known.txt`, when Shep already has fixes under way: one per line, as
+  `id | where | repo and pull request | cause`.
+
+The failure can be of any kind. A run may have broken before it did its work (Scout never opened a
+browser, Bolt never got to the task). An agent may have done its work and failed at it (Bolt stopped,
+Patch changed nothing). The work may be what is wrong (Scout's flows fail, a check is red, three rounds
+of fixes didn't clear it). Find which before anything else, because they are fixed in different places.
+
+Work from the evidence, backwards from where it stops:
 
 1. **The line that ended it.** Find the first real error, not the last line (a script's own "couldn't
-   ..." message usually follows the tool's actual complaint a few lines up). Quote it.
+   ..." message usually follows the tool's actual complaint a few lines up). Quote it. For failing flows
+   or a red check, find the assertion or the compiler's message, not the summary that counts them.
 2. **Who printed it.** `[Sandbox]` lines are HQ starting the run (cloning, laying the crew in); `[Image]`
    is HQ's prepared sandbox image; `[Scout]`, `[Bolt]`, `[CrewSetup]`, `[ScoutEnv]` and the like are the
    crew's scripts, which are in this checkout under `.crew/` exactly as the run had them; everything
    else is a tool the repo or the crew ran (`npm`, `playwright`, `firebase`, the app itself).
 3. **Read the code that ran.** Open the crew script that was running (`.crew/scripts/run/<agent>.sh` and
    what it calls) and the repo's side of it (`.github/agents/crew.json`, `.github/scout/`, `scripts/scout/`,
-   `package.json`, `.nvmrc`, the lockfile). Follow the failing command to what it was given. When you can
-   check a guess cheaply here (a version, a file that should exist, a command's `--help`), check it.
-4. **Decide where the cause is.** Ask what would have to change for this same run to get through:
-   - `repo`: something in this repository: its `crew.json`, Scout config, seed or start script, a pinned
-     dependency, the app not starting on emulators.
+   `package.json`, `.nvmrc`, the lockfile). Follow the failing command to what it was given. For a
+   failing flow, test or check, read the test and the code it exercises, and the mission's change to
+   either. When you can check a guess cheaply here (a version, a file that should exist, a command's
+   `--help`, running the one failing test), check it.
+4. **Ask whether the mission's change caused it.** Would the same run fail on the base branch, without
+   this pull request? If the failing file or behaviour is untouched by the change and fails the same way
+   without it, the cause is not the mission's, however much it looks like its failure.
+5. **Decide where the cause is.** Ask what would have to change for this same run to get through:
+   - `code`: the mission's own change is wrong: the code it wrote or changed doesn't do what the
+     mission asks, doesn't build, or breaks something that worked. Only with a pull request. Patch is
+     sent to that pull request with your reading.
+   - `test`: the change is right and a test, flow or check is what is wrong: it asserts the behaviour
+     the mission set out to change, waits on something that was renamed, or was never right. Only with
+     a pull request, and only when you can say why the test, not the code, is the wrong one. Patch
+     corrects it there, and a person is shown every test that changed.
+   - `repo`: something in this repository that is not this mission's change, so it is wrong on the base
+     branch too: its `crew.json`, Scout config, seed or start script, a pinned dependency, the app not
+     starting on emulators, a test that was already failing. A mission of its own fixes it on the base
+     branch.
    - `crew`: the crew's own scripts or briefs are wrong or don't handle this runner (a missing fallback,
-     a bad assumption about the OS or a tool's version). True when any repo with the same setup would
-     break the same way.
+     a bad assumption about the OS or a tool's version, a brief that leads the agent to do the wrong
+     thing). True when any repo with the same setup would fail the same way.
    - `hq`: how HQ started the run or built its image (the `[Sandbox]` or `[Image]` part, a missing tool
-     the image is meant to carry, the request HQ sent).
+     the image is meant to carry, the request HQ sent, what HQ made of the agent's report).
    - `person`: only a person can fix it: a secret, a token's permission, billing, a setting in a
-     dashboard. Say exactly which and where.
+     dashboard, or a task that contradicts itself or can't be done as written. Say exactly which and
+     where.
    - `retry`: nothing is wrong that a change would fix: a network blip, a rate limit, a registry that
-     timed out. Only when the log shows it.
+     timed out, a runner that vanished. Only when the log shows it. This is the one answer that makes
+     Shep run the same thing again, so "it might pass next time" is not a reason for it.
    When two would work (the repo could pin a newer version; the crew could cope with the old one), pick
    the one that fixes it for every repo, and say the other in `fix`.
+6. **Check the fixes under way.** If `radar-out/known.txt` lists a fix whose cause is the cause you
+   found (the same failing command for the same reason, not merely the same agent or repo), put its id
+   in `sameAs`: the mission waits on that fix instead of getting a second one. A line marked `ALREADY
+   APPLIED to this run` means the failed run had that fix under it: name it in `sameAs` only if the run
+   still failed for that very cause (the fix doesn't reach it), and say in `cause` what it misses.
+   Otherwise this is a different failure, perhaps the next one behind it: diagnose it on its own.
 
 Write `radar-out/diagnosis.json`:
 
@@ -206,14 +249,15 @@ Write `radar-out/diagnosis.json`:
   "cause": "One sentence a person can act on: what failed and why.",
   "evidence": ["The quoted log line", "path/to/file:line and what it does"],
   "fix": "What to change, written as a task for the engineer who will make it: the file, the behaviour wanted, what must keep working, and how to tell it worked. No diff.",
-  "files": ["scripts/run/scout.sh"]
+  "files": ["scripts/run/scout.sh"],
+  "sameAs": "the id from known.txt, only when step 6 found one"
 }
 ```
 
 `files` are paths in the place `where` names (for `crew`, without the `.crew/` prefix). For `person`
-and `retry`, `fix` says what to do and `files` is empty. If the log doesn't show the cause, say so in
-`cause`, give your best reading in `fix`, and still pick the most likely `where`: a guess that is
-labelled is more use than none.
+and `retry`, `fix` says what to do and `files` is empty. If the evidence doesn't show the cause, say so
+in `cause`, give your best reading in `fix`, and still pick the most likely `where`: a guess that is
+labelled is more use than none. Leave `sameAs` out when no listed fix matches.
 
 ## Rules
 

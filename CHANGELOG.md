@@ -3,6 +3,21 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.13.0
+
+- **Radar finds the root cause of any failure on a mission** (mode `diagnose`). Until now it read one
+  kind of failure: a smoke test's run that broke before testing. It now reads whatever stopped a
+  mission: a run that broke, an agent that failed at its work, Scout's failing flows, a red check, fix
+  rounds that didn't clear it. Two new answers say the cause is on the mission's own pull request:
+  `code` (the change is wrong) and `test` (the test is wrong, not the change). With a pull request,
+  Radar reads that branch, and checks whether the same run would fail without the change before it
+  blames it. HQ also sends the fixes Shep already has under way (`known`, as `radar-out/known.txt`),
+  and Radar names the one that covers the same cause (`sameAs`) so a second mission failing for it
+  waits on that fix instead of getting its own. The diagnosis is stamped with the brief that wrote it
+  (`brief: 2`); HQ acts on a mission's failure only from this one. Agent HQ's Shep asks for a reading
+  on every mission that fails and acts on the answer
+  ([reference](docs/reference.md#diagnosing-a-failure)). A repo's caller workflows need no change.
+
 ## 1.12.5
 
 - **A crew-config problem is named on the mission.** A sandbox run that failed because

@@ -26,7 +26,7 @@ on:
         required: false
     inputs:
       params:
-        description: 'JSON from Agent HQ: { mode: triage|audit|study|fake|diagnose, mission_id, task, scope, report_url, fake_id, service, repair_id, agent, log }. Wins over the inputs below.'
+        description: 'JSON from Agent HQ: { mode: triage|audit|study|fake|diagnose, mission_id, task, scope, report_url, fake_id, service, repair_id, agent, log, pr_number, known }. Wins over the inputs below.'
         required: false
         type: string
         default: ''
@@ -291,14 +291,26 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      # The failed run's own log, when HQ kept none (`gh run view --log-failed`), and the pull request's head.
+      actions: read
+      pull-requests: read
     env:
       REPAIR_ID: ${{ fromJSON(inputs.params || '{}').repair_id }}
       RUN_LOG: ${{ fromJSON(inputs.params || '{}').log }}
+      KNOWN_FIXES: ${{ fromJSON(inputs.params || '{}').known }}
+      RADAR_PR: ${{ fromJSON(inputs.params || '{}').pr_number }}
       AGENT_HQ_URL: ${{ vars.AGENT_HQ_URL }}
+      GH_TOKEN: ${{ github.token }}
     steps:
+      # A mission with a pull request: its branch, so Radar reads the code that ran.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ fromJSON(inputs.params || '{}').pr_number && format('refs/pull/{0}/head', fromJSON(inputs.params || '{}').pr_number) || '' }}
+          fetch-depth: 0
       - uses: vehicle-care-network/agent-crew@v1
-      - run: mkdir -p radar-out && printf '%s\n' "$RUN_LOG" > radar-out/run.log
+      - run: |
+          mkdir -p radar-out && printf '%s\n' "$RUN_LOG" > radar-out/run.log
+          if [ -n "$KNOWN_FIXES" ]; then printf '%s\n' "$KNOWN_FIXES" > radar-out/known.txt; fi
       - name: Pick the model (set in Agent HQ)
         id: model
         continue-on-error: true
@@ -320,7 +332,8 @@ jobs:
           allowed_bots: ${{ vars.AGENT_HQ_BOT || 'vcn-agent-hq' }},${{ vars.AGENT_HQ_BOT || 'vcn-agent-hq' }}[bot]
           prompt: |
             Follow the brief in .crew/briefs/RADAR.md. RADAR_MODE: diagnose.
-            The end of the failed run is in radar-out/run.log. Whose run it was is in the environment variable RADAR_FAILED_AGENT; what it was for is in RADAR_TASK.
+            The end of the failed run is in radar-out/run.log. Whose run it was is in the environment variable RADAR_FAILED_AGENT; what it was for, and what failed, is in RADAR_TASK.
+            The mission's pull request, when it has one, is in RADAR_PR, and this checkout is its branch. Fixes already under way, when there are any, are listed in radar-out/known.txt.
           claude_args: |
             --model ${{ steps.model.outputs.model || vars.AGENT_MODEL_RADAR || 'claude-sonnet-5-5' }}
             --max-turns 80
@@ -336,7 +349,9 @@ jobs:
       - name: Send the diagnosis to HQ
         run: |
           test -s radar-out/diagnosis.json || { echo "::error::Radar didn't write radar-out/diagnosis.json"; exit 1; }
-          jq -e '(.where | IN("repo","crew","hq","person","retry")) and (.cause | type == "string" and length > 0)' radar-out/diagnosis.json >/dev/null
+          jq -e '(.where | IN("code","test","repo","crew","hq","person","retry")) and (.cause | type == "string" and length > 0)' radar-out/diagnosis.json >/dev/null
+          # Which brief wrote it: HQ acts on a mission's failure only from one that knows `code`, `test` and `sameAs`.
+          jq '. + {brief: 2}' radar-out/diagnosis.json > radar-out/diagnosis.tmp && mv radar-out/diagnosis.tmp radar-out/diagnosis.json
           node .crew/scripts/agents/hq.mjs diagnosis-post "$REPAIR_ID" radar-out/diagnosis.json
       # HQ waits on the diagnosis until it hears back.
       - name: Tell HQ it failed
