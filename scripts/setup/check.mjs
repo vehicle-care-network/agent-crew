@@ -137,7 +137,13 @@ if (has('hq') && !github && !sandbox && !local) warn('Bolt, Nova, Patch and Rock
 
 // --- Scout ----------------------------------------------------------------------------------------
 // On sandboxes there is no scout-qa.yml to go by: Scout is set up when its files are here.
-const scout = has('scout') || (sandbox && (existsSync('.github/scout') || existsSync('e2e/scout')));
+// A repo with no app to open (`scout.app: false`): Scout's verdict is the repo's own tests, so none of its pieces are needed.
+const noApp = config?.scout?.app === false;
+if (noApp) {
+  section('Scout');
+  ok('No app to open (scout.app is false): Scout runs the repo\'s tests (commands.test) and reports that');
+}
+const scout = !noApp && (has('scout') || (sandbox && (existsSync('.github/scout') || existsSync('e2e/scout'))));
 if (scout) {
   section('Scout (browser tests on a Next.js app with Firebase emulators)');
   const pkg = existsSync('package.json') ? json('package.json') : null;
@@ -167,7 +173,7 @@ if (scout) {
 }
 
 // --- The production probe -------------------------------------------------------------------------
-if (has('probe')) {
+if (has('probe') && !noApp) {
   section('Production probe');
   if (config?.probe?.url) ok(`Probes ${config.probe.url}`);
   else bad(`${CONFIG} has no "probe": { "url": "https://…" }`);

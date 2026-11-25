@@ -3,6 +3,27 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.0
+
+- **A PR's own corrections to Scout's pieces are tested (sandbox runs).** Scout lays main's
+  `crew.json`, Scout config, seed scripts and core specs over the PR before it runs, so branches
+  opened before those existed still have them. That also overwrote what the PR itself corrected: a
+  mission that moved a UI and fixed the core spec driving it had main's old spec run against the new
+  UI, and failed run after run with nothing Patch could push. The files a PR changes under
+  `.github/agents/crew.json`, `.github/scout/`, `scripts/scout/` and `e2e/scout/core/` now come back
+  from the PR after main's are laid over; every other core spec is still main's. This gives up the rule
+  that a PR can never change what a core spec checks. What covers it instead: Agent HQ flags every
+  existing test the crew changed and holds the PR until a person looks, and Iris reviews the spec like
+  any code. The GitHub Actions workflow (`scout-qa.yml`) is unchanged and still takes core specs from
+  main.
+- **A repo with no app** (`"scout": { "app": false }` in `crew.json`). Scout has nothing to open, so it
+  runs `commands.test` and sends that to HQ as its one flow. The setup check skips Scout's pieces and
+  the probe for such a repo.
+- **The crew runs on itself.** This repo now has its own `.github/agents/crew.json` (no app; the tests
+  are a syntax check of the shell scripts and `node --test`), so Agent HQ can send Bolt, Iris, Patch and
+  Scout here when Shep traces a failure to the crew. It runs in HQ's sandboxes: move the repo there
+  under Setup, Runners.
+
 ## 1.13.2
 
 - **Bolt can fix the repo's own crew config when that is the mission.** Shep diagnosed a Scout failure
