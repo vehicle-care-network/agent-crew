@@ -14,6 +14,14 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   flows, not before the re-run of flows the app wasn't answering for. Seeds must stay idempotent, as
   they always had to. The GitHub Actions workflow's `record.sh` step re-runs the core and feature seeds
   too; it re-runs the PR's own once that step is given `PR_NUMBER` and `SCOUT_REUSED`.
+- **Dependencies install with their install scripts on npm 12 (sandbox runs).** npm 12 skips every
+  dependency's install scripts unless the repo's `package.json` approves them in `allowScripts`
+  (`npm warn install-scripts ... blocked`). A sandbox with npm 12 therefore installed a repo without the
+  native builds and binaries those scripts make, which the repo's own CI and Vercel do run. Scout's run
+  on such a repo ended right after that install. `install_deps` now sets
+  `npm_config_dangerously_allow_all_scripts` for the rest of the run, on npm 12 or later, when the repo's
+  `package.json` has no `allowScripts`. That covers `npx firebase-tools` and a fallback Playwright too.
+  A repo with its own `allowScripts` list keeps it, and older npm is left alone.
 
 ## 1.14.1
 
