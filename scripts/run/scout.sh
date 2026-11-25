@@ -257,7 +257,7 @@ dry_run || node "$HQ_MJS" fakes-pull "$SCOUT_OUT/fakes/hq" >/dev/null
 env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
   bash .crew/scripts/scout/start-env.sh
 # The committed flows' own data, and the data the reused specs' seed scripts create.
-(
+load_seeds() (
   set -a; . ./.env.local; set +a
   for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do [ -f "$f" ] && { say "Seeding $f"; node "$f"; }; done
   # This PR's own seeds run whether its specs came back from HQ or were committed on its branch.
@@ -267,6 +267,21 @@ env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u GH_TOKEN -u GITHUB_TOKEN 
   done
   true
 )
+load_seeds
+
+# Puts the emulators back to the seeded state: Auth and Firestore emptied, then the base seed and the seeds
+# above. Scout's agent runs its flows against these emulators, so a flow that creates something (an Auth
+# account, say) would otherwise meet it already there in the recorded run, and fail there only.
+reseed() {
+  (
+    set -a; . ./.env.local; set +a
+    project="$NEXT_PUBLIC_FIREBASE_PROJECT_ID"
+    curl -fsS -o /dev/null -X DELETE "http://$FIREBASE_AUTH_EMULATOR_HOST/emulator/v1/projects/$project/accounts" &&
+      curl -fsS -o /dev/null -X DELETE "http://$FIRESTORE_EMULATOR_HOST/emulator/v1/projects/$project/databases/(default)/documents" &&
+      node scripts/scout/seed.mjs
+  ) || { warn "Couldn't put the emulators back to the seeded state; the recorded run starts from what the agent left"; return 0; }
+  load_seeds
+}
 
 # ---- Scout explores, seeds and writes specs
 SCOUT_AGENT_OUTCOME=skipped
@@ -305,6 +320,8 @@ export SCOUT_AGENT_OUTCOME
 # record.sh keeps the app up for it: a flow that failed only because the app wasn't answering is run again,
 # and a run where it kept going down is a broken run (HQ hears `qa error`), never a list of failed flows.
 use_pr_scout_files again
+# Every spec starts from what its seed describes, not from what the agent's own runs left behind.
+if [ "$SCOUT_AGENT_OUTCOME" != skipped ]; then say "Putting the emulators back to the seeded state for the recorded run"; reseed; fi
 if ! bash .crew/scripts/scout/record.sh; then
   if [ "$SCOUT_MODE" = pr ] && ! dry_run; then node .crew/scripts/scout/report.mjs || warn "Couldn't post the report on the PR"; fi
   die "$(cat "$SCOUT_OUT/broke.txt" 2>/dev/null || echo "Scout's recorded run broke before it had results")"
