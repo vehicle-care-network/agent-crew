@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.5
+## 1.14.6
 
 - **Patch merges a stale base in on QA and build rounds (sandbox runs).** A PR whose branch forked from
   main before main fixed a core Scout spec failed those flows, and Patch rightly changed nothing, but it
@@ -12,6 +12,9 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   it in (no commit) before the crew is set up, exactly as for conflicts: the merge is pushed even if Patch
   changes nothing else, so Scout re-runs with the base's fixes, and any conflict is listed in
   `agent-out/conflicts.txt` for Patch to resolve. A branch already up to date is left as it is.
+
+## 1.14.5
+
 - **The recorded run's seeds run in `record.sh`, so every recorded run starts from the seeded data.** A
   flow that saves changed the document the read-only flows open (a reminder still showing the saved
   "2 hours"), and the recorded run inherited it. 1.14.4 re-ran the seeds in `scout.sh` only. The seed loop
