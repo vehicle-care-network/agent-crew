@@ -51,7 +51,9 @@ patterns in neighbouring code before changing code. Report progress to HQ in one
    the owner with that reason, and holds a PR whose test changes have none.
 6. **For `build` and `qa`, write `agent-out/lesson.md`**: one bullet in the style of
    `.github/agents/LESSONS.md` (what broke, why, and the rule that prevents it), so the crew doesn't repeat
-   it. Skip it if LESSONS.md already has that rule. The workflow adds it to LESSONS.md for you.
+   it. Skip it if LESSONS.md already has that rule. The workflow adds it to LESSONS.md for you, once per
+   round, so on a later round check the entries this PR already added (`gh pr diff "$PR_NUMBER"`): if
+   your lesson corrects or repeats one of them, edit that entry in place instead of writing a new one.
 
 ## This repo
 
@@ -61,5 +63,7 @@ Never commit, push or comment; the workflow pushes your changes. Never touch `.g
 LESSONS.md; write `agent-out/lesson.md` instead), `.crew/` or `.env*`. One exception in `.github/`: on
 a pull request whose own purpose is a change to the repo's setup for the crew
 (`.github/agents/crew.json`, `.github/scout/`), you may change those files further when that is what
-the review, the failing run or your instructions call for. Workflows, `risk-map.json` and the notes
-files stay off limits.
+the review, the failing run or your instructions call for. And in `.github/agents/LESSONS.md` you may
+edit, merge or remove the entries this same PR added (they show in `gh pr diff "$PR_NUMBER"`), such as
+folding repeated ones into one accurate entry; every other entry stays as it is. Workflows,
+`risk-map.json` and the notes files stay off limits.
