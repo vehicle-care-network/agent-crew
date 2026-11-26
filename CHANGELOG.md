@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.4
+## 1.14.5
 
 - **Scout's PR seeds no longer break core flows the PR never touched.** A PR to the Orders page failed
   its Cooking list, pickup and shopping-totals core flows, and Patch found nothing to fix: Scout's own
@@ -13,6 +13,17 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   only its spec uses (its own customer or account, its own items or ones `LESSONS.md` names as safe,
   `pr-<N>-` ids) and resets only those in `beforeEach`; and on a re-run, a core flow failing on a page
   the diff doesn't touch sends Scout to its own PR seeds first.
+
+## 1.14.4
+
+- **Scout's recorded run starts from the seeded emulators (sandbox runs).** The seeds ran once, before
+  Scout's agent, and the recorded run (the verdict) then ran every spec on whatever the agent's own runs
+  had left. So a flow that creates something failed only in the recorded run: SmogSupport's impersonate
+  flow made an Auth account and passed for the agent, then found that account already there and failed
+  on a `toBe`. After the agent and before `record.sh`, Auth and Firestore are emptied through the
+  emulators' own endpoints, and the base seed, core and feature seeds, and the PR's seeds run again,
+  just as they did before the agent. Runs with no agent are unchanged. If the reset fails, or a seed fails
+  while running again, the run warns and goes on as before. The GitHub Actions workflow (`scout-qa.yml`) is unchanged.
 
 ## 1.14.3
 
