@@ -153,7 +153,21 @@ use_node() {
   say "Using Node $(node --version) (npm $(npm --version)), as the repo asks; the runner has $have"
 }
 crew_cmd() { jq -r --arg k "$1" '.commands[$k] // empty' .github/agents/crew.json; }
-install_deps() { say "Installing dependencies"; bash -c "$(crew_cmd install)"; }
+# npm 12 skips every dependency's install scripts that the repo's package.json doesn't list in `allowScripts`
+# ("npm warn install-scripts ... blocked"), so a native build or a downloaded binary is missing. The npm the
+# repo's own CI and Vercel ran installed with them. The run already runs the repo's code and its locked
+# dependencies. So, on npm 12 or later, a repo that hasn't chosen an `allowScripts` list installs as before,
+# here and in the run's later npm and npx calls (`npx firebase-tools`, a fallback Playwright). A repo that
+# has its own list keeps it.
+allow_install_scripts() {
+  local major
+  major=$(npm --version 2>/dev/null | cut -d. -f1)
+  [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -ge 12 ] || return 0
+  [ "$(jq -r 'has("allowScripts")' package.json 2>/dev/null)" != true ] || return 0
+  export npm_config_dangerously_allow_all_scripts=true
+  say "npm $(npm --version) blocks dependencies' install scripts unless approved; this repo lists none, so they run as with the npm before"
+}
+install_deps() { allow_install_scripts; say "Installing dependencies"; bash -c "$(crew_cmd install)"; }
 scout_port() { jq -r '.scout.port' .github/agents/crew.json; }
 # A full history: merges, `git log` and land.mjs need it; a clone HQ made may be shallow.
 unshallow() { if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch -q --unshallow || git fetch -q; fi; }

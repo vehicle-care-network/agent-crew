@@ -12,6 +12,25 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   it in (no commit) before the crew is set up, exactly as for conflicts: the merge is pushed even if Patch
   changes nothing else, so Scout re-runs with the base's fixes, and any conflict is listed in
   `agent-out/conflicts.txt` for Patch to resolve. A branch already up to date is left as it is.
+- **The recorded run's seeds run in `record.sh`, so every recorded run starts from the seeded data.** A
+  flow that saves changed the document the read-only flows open (a reminder still showing the saved
+  "2 hours"), and the recorded run inherited it. 1.14.4 re-ran the seeds in `scout.sh` only. The seed loop
+  is now `scripts/scout/seed.sh` (same seeds, same rules: core and features, this PR's `pr-<n>-*`, and
+  the rest when the specs came back from the previous run; every seed runs even if one fails, and it
+  fails if any did). `record.sh` runs it once just before the flows, not before the re-run of flows the
+  app wasn't answering for. The reset after Scout's agent now empties Auth and Firestore and runs only the
+  base seed, so the seeds run once, in `record.sh`, not twice. Seeds must stay idempotent, as they always
+  had to. The GitHub Actions workflow's `record.sh` step re-runs the core and feature seeds too (it doesn't
+  empty the emulators); it re-runs the PR's own once that step is given `PR_NUMBER` and `SCOUT_REUSED`.
+- **Dependencies install with their install scripts on npm 12 (sandbox runs, every agent).** npm 12 skips
+  every dependency's install scripts unless the repo's `package.json` approves them in `allowScripts`
+  (`npm warn install-scripts ... blocked`). A sandbox with npm 12 therefore installed a repo without the
+  native builds and binaries those scripts make, which the repo's own CI and Vercel do run; Scout's run on
+  such a repo ended right after that install. `install_deps`, which Bolt, Patch, Nova, Radar, Rocket and
+  Scout all use, now sets `npm_config_dangerously_allow_all_scripts` for the rest of the run, on npm 12 or
+  later, when the repo's `package.json` has no `allowScripts`. That covers the run's later npm and npx
+  calls too (`npx firebase-tools`, a fallback Playwright). A repo with its own `allowScripts` list keeps
+  it, and older npm is left alone.
 
 ## 1.14.4
 

@@ -10,7 +10,11 @@
 # reported as broken (not as failed flows): the reason goes to $SCOUT_OUT/broke.txt, the results are set
 # aside as results.unreachable.json, and this exits 1.
 #
-# Env: SCOUT_OUT, SCOUT_BASE_URL, SCOUT_ONLY_GREP (only the flows HQ asked to re-run), CREW_DIR.
+# Before the flows, the seeds run again (seed.sh), so the run starts from the data the specs were written
+# against and not from what Scout's agent left behind.
+#
+# Env: SCOUT_OUT, SCOUT_BASE_URL, SCOUT_ONLY_GREP (only the flows HQ asked to re-run), CREW_DIR,
+# PR_NUMBER and SCOUT_REUSED (for seed.sh).
 # Usage: .crew/scripts/scout/record.sh      (from the repo root, after start-env.sh)
 set -uo pipefail
 
@@ -60,6 +64,10 @@ run_flows() {
 unreachable() { SCOUT_OUT="$OUT" node "$HERE/unreachable.mjs"; }
 
 ensure_app "before the recorded run" || broke "The app under test wasn't answering at $BASE before the flows ran, and couldn't be started again. Nothing was tested; see next-dev.log in the run's log."
+# Scout's agent has run the specs, and a flow that saves has changed the data the others read: the recorded
+# run starts from the seeded data again. Once: the re-run below is of flows that never reached their page.
+echo "[Scout] Seeding again for the recorded run"
+bash "$HERE/seed.sh" || echo "::warning::[Scout] A seed failed before the recorded run; flows that read its data may fail for that"
 run_flows
 down=$(unreachable)
 if [ -n "$down" ]; then
