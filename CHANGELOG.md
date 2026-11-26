@@ -3,33 +3,38 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.5
+
+- **The recorded run's seeds run in `record.sh`, so every recorded run starts from the seeded data.** A
+  flow that saves changed the document the read-only flows open (a reminder still showing the saved
+  "2 hours"), and the recorded run inherited it. 1.14.4 re-ran the seeds in `scout.sh` only. The seed loop
+  is now `scripts/scout/seed.sh` (same seeds, same rules: core and features, this PR's `pr-<n>-*`, and
+  the rest when the specs came back from the previous run; every seed runs even if one fails, and it
+  fails if any did). `record.sh` runs it once just before the flows, not before the re-run of flows the
+  app wasn't answering for. The reset after Scout's agent now empties Auth and Firestore and runs only the
+  base seed, so the seeds run once, in `record.sh`, not twice. Seeds must stay idempotent, as they always
+  had to. The GitHub Actions workflow's `record.sh` step re-runs the core and feature seeds too (it doesn't
+  empty the emulators); it re-runs the PR's own once that step is given `PR_NUMBER` and `SCOUT_REUSED`.
+- **Dependencies install with their install scripts on npm 12 (sandbox runs, every agent).** npm 12 skips
+  every dependency's install scripts unless the repo's `package.json` approves them in `allowScripts`
+  (`npm warn install-scripts ... blocked`). A sandbox with npm 12 therefore installed a repo without the
+  native builds and binaries those scripts make, which the repo's own CI and Vercel do run; Scout's run on
+  such a repo ended right after that install. `install_deps`, which Bolt, Patch, Nova, Radar, Rocket and
+  Scout all use, now sets `npm_config_dangerously_allow_all_scripts` for the rest of the run, on npm 12 or
+  later, when the repo's `package.json` has no `allowScripts`. That covers the run's later npm and npx
+  calls too (`npx firebase-tools`, a fallback Playwright). A repo with its own `allowScripts` list keeps
+  it, and older npm is left alone.
+
 ## 1.14.4
 
-- **Scout's recorded run starts from the seeded data again (sandbox runs).** The seeds ran once, before
-  Scout's agent; the agent then ran the PR's specs, and a flow that saves changed the document the
-  read-only flows open. The recorded run inherited that, so on a PR whose app was correct two of three
-  flows failed (a reminder still showing the saved "2 hours"), round after round. The seed loop is now
-  `scripts/scout/seed.sh` (same seeds, same rules: core and features, this PR's `pr-<n>-*`, and the
-  rest when the specs came back from the previous run), and `record.sh` runs it once just before the
-  flows, not before the re-run of flows the app wasn't answering for. Seeds must stay idempotent, as
-  they always had to. The GitHub Actions workflow's `record.sh` step re-runs the core and feature seeds
-  too; it re-runs the PR's own once that step is given `PR_NUMBER` and `SCOUT_REUSED`.
-- **Dependencies install with their install scripts on npm 12 (sandbox runs).** npm 12 skips every
-  dependency's install scripts unless the repo's `package.json` approves them in `allowScripts`
-  (`npm warn install-scripts ... blocked`). A sandbox with npm 12 therefore installed a repo without the
-  native builds and binaries those scripts make, which the repo's own CI and Vercel do run. Scout's run
-  on such a repo ended right after that install. `install_deps` now sets
-  `npm_config_dangerously_allow_all_scripts` for the rest of the run, on npm 12 or later, when the repo's
-  `package.json` has no `allowScripts`. That covers `npx firebase-tools` and a fallback Playwright too.
-  A repo with its own `allowScripts` list keeps it, and older npm is left alone.
-- **Scout's recorded run starts from emptied, re-seeded emulators (sandbox runs).** The recorded run (the
-  verdict) ran every spec on whatever the agent's own runs had left, so a flow that creates something
-  failed only in the recorded run: SmogSupport's impersonate flow made an Auth account and passed for the
-  agent, then found that account already there and failed on a `toBe`. After the agent and before
-  `record.sh`, Auth and Firestore are emptied through the emulators' own endpoints and the base seed runs
-  again; `record.sh` then runs `seed.sh` as above. Runs with no agent are unchanged. If emptying fails, the
-  run warns and goes on. `seed.sh` runs every seed even if one fails, and fails if any did. The GitHub
-  Actions workflow (`scout-qa.yml`) doesn't empty the emulators.
+- **Scout's recorded run starts from the seeded emulators (sandbox runs).** The seeds ran once, before
+  Scout's agent, and the recorded run (the verdict) then ran every spec on whatever the agent's own runs
+  had left. So a flow that creates something failed only in the recorded run: SmogSupport's impersonate
+  flow made an Auth account and passed for the agent, then found that account already there and failed
+  on a `toBe`. After the agent and before `record.sh`, Auth and Firestore are emptied through the
+  emulators' own endpoints, and the base seed, core and feature seeds, and the PR's seeds run again,
+  just as they did before the agent. Runs with no agent are unchanged. If the reset fails, or a seed fails
+  while running again, the run warns and goes on as before. The GitHub Actions workflow (`scout-qa.yml`) is unchanged.
 
 ## 1.14.3
 
