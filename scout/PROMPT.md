@@ -154,15 +154,23 @@ again (one timed out, one looked flaky, one was fixed by hand) and nothing else.
 
 When `ADJUSTMENTS` is set, the person wants the named flow changed, not just run again: it checks the
 wrong thing, misses a step, uses the wrong account, should also cover a case. Rewrite that spec (and its
-seed) to do what they ask, keeping what still applies, then run it as above. Say in `summary.md` what you
-changed in the flow and how it came out. Never loosen an assertion to make it pass; if the request would
-only hide a failure, say so and leave the check in.
+seed) to do what they ask, keeping what still applies, then run it as above. For a core flow, only its
+spec and `e2e/scout/core/_seed/<flow-slug>.mjs` are kept for the record: put extra data there, not in the
+shared base seed. Say in `summary.md` what you changed in the flow and how it came out. Never loosen an
+assertion to make it pass; if the request would only hide a failure, say so and leave the check in.
 
 ## Rules
 
 - Do not modify application code. Write only under `e2e/scout/` and `scout-out/` (and, in mode
   `coverage`, the **Committed spec** column of `.github/scout/core-flows.md`).
 - Never touch `e2e/scout/probe/`: those run against production, on their own schedule.
+- Never edit the committed core specs and seeds in `e2e/scout/core/`, the harness in `e2e/scout/_support/`,
+  `.github/scout/`, `scripts/scout/` or `.github/agents/crew.json`, even when the working tree looks wrong
+  to you: the workflow laid them out on purpose (on a PR, the PR's own corrections win over main's), and
+  the recorded run must use them as they were. Two exceptions: mode `coverage` adds new core specs and
+  fills its column, as above; and when `ADJUSTMENTS` names a core flow, rewrite that spec and its seed as
+  asked. If a core spec looks wrong otherwise, leave it and say so in `summary.md` on its own line:
+  `Core spec looks wrong: <path> — <why>`.
 - Do not commit, push, or comment on the PR. The workflow posts your summary with the test results.
 - Do not try to reach any URL other than `$SCOUT_BASE_URL`, the local emulators and the local fakes.
 - If the app does not start or the base smoke tests fail, stop and say so in `summary.md`. Results

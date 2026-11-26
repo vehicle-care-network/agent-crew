@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.3
+## 1.14.4
 
 - **Scout's recorded run starts from the seeded emulators (sandbox runs).** The seeds ran once, before
   Scout's agent, and the recorded run (the verdict) then ran every spec on whatever the agent's own runs
@@ -13,6 +13,26 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   emulators' own endpoints, and the base seed, core and feature seeds, and the PR's seeds run again,
   just as they did before the agent. Runs with no agent are unchanged. If the reset fails, or a seed fails
   while running again, the run warns and goes on as before. The GitHub Actions workflow (`scout-qa.yml`) is unchanged.
+
+## 1.14.3
+
+- **Scout's agent can no longer change the verdict by editing Scout's own pieces (sandbox runs).** A PR
+  that moved a step in the UI and corrected its core spec to match failed its two Landing flows, and
+  Patch found nothing to fix: Scout's agent had edited the PR's correct `e2e/scout/core/layout.spec.ts`
+  back to main's in the working tree, and the recorded run used that edited file. The core specs and
+  seeds, the harness (`e2e/scout/_support`), `.github/scout/`, `scripts/scout/` and
+  `.github/agents/crew.json` are now copied just before the agent starts and put back before the recorded
+  run (`scripts/scout/pieces.sh`); files the agent added among them are taken out, and the log names each
+  one. The agent's own flows, kept flows and smoke specs are untouched, a coverage run keeps the core specs
+  it adds and its `core-flows.md` column, and a run sent with ADJUSTMENTS keeps its rewrite of the core
+  flow it names (the spec holding that flow's test, and its `core/_seed/<slug>.mjs`) but not edits to
+  other core specs or the shared base seed. Scout's brief now says not to edit those pieces (with those two exceptions) and to report
+  a core spec that looks wrong in `summary.md`. The Actions workflow (`scout-qa.yml`) doesn't restore them
+  yet.
+- **When Patch has nothing to change, HQ hears why (sandbox runs).** "Patch made no changes" reached HQ
+  as a bare failure, so a Patch re-run on a PR that was already right failed the same way each time. The
+  failure HQ gets now carries the start of Patch's `summary.md`, and Patch's brief asks it to open that
+  summary with one line saying why nothing needed changing and where the failure comes from.
 
 ## 1.14.2
 
