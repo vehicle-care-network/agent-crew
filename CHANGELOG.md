@@ -22,6 +22,14 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   `npm_config_dangerously_allow_all_scripts` for the rest of the run, on npm 12 or later, when the repo's
   `package.json` has no `allowScripts`. That covers `npx firebase-tools` and a fallback Playwright too.
   A repo with its own `allowScripts` list keeps it, and older npm is left alone.
+- **Scout's recorded run starts from emptied, re-seeded emulators (sandbox runs).** The recorded run (the
+  verdict) ran every spec on whatever the agent's own runs had left, so a flow that creates something
+  failed only in the recorded run: SmogSupport's impersonate flow made an Auth account and passed for the
+  agent, then found that account already there and failed on a `toBe`. After the agent and before
+  `record.sh`, Auth and Firestore are emptied through the emulators' own endpoints and the base seed runs
+  again; `record.sh` then runs `seed.sh` as above. Runs with no agent are unchanged. If emptying fails, the
+  run warns and goes on. `seed.sh` runs every seed even if one fails, and fails if any did. The GitHub
+  Actions workflow (`scout-qa.yml`) doesn't empty the emulators.
 
 ## 1.14.3
 

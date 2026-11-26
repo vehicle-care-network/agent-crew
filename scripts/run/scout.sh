@@ -257,9 +257,23 @@ dry_run || node "$HQ_MJS" fakes-pull "$SCOUT_OUT/fakes/hq" >/dev/null
 env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
   bash .crew/scripts/scout/start-env.sh
 # The committed flows' own data, and the data the reused specs' seed scripts create. record.sh runs the
-# same seeds again before the recorded run.
+# same seeds again before the recorded run. A seed that fails here ends the run.
 export SCOUT_REUSED="$REUSED"
 bash .crew/scripts/scout/seed.sh
+
+# Empties Auth and Firestore and runs the base seed again. Scout's agent runs its flows against these
+# emulators, so a flow that creates something (an Auth account, say) would otherwise meet it already there
+# in the recorded run, and fail there only. The seeds above (seed.sh) then run again in record.sh, just
+# before the flows, so the recorded run starts from the seeded state.
+reset_emulators() {
+  (
+    set -a; . ./.env.local; set +a
+    project="$NEXT_PUBLIC_FIREBASE_PROJECT_ID"
+    curl -fsS -o /dev/null -X DELETE "http://$FIREBASE_AUTH_EMULATOR_HOST/emulator/v1/projects/$project/accounts" &&
+      curl -fsS -o /dev/null -X DELETE "http://$FIRESTORE_EMULATOR_HOST/emulator/v1/projects/$project/databases/(default)/documents" &&
+      node scripts/scout/seed.mjs
+  ) || warn "Couldn't empty the emulators; the recorded run starts from what the agent left, with the seeds run again over it"
+}
 
 # ---- Scout explores, seeds and writes specs
 SCOUT_AGENT_OUTCOME=skipped
@@ -305,6 +319,8 @@ export SCOUT_AGENT_OUTCOME
 # record.sh keeps the app up for it: a flow that failed only because the app wasn't answering is run again,
 # and a run where it kept going down is a broken run (HQ hears `qa error`), never a list of failed flows.
 use_pr_scout_files again
+# Every spec starts from what its seed describes, not from what the agent's own runs left behind.
+if [ "$SCOUT_AGENT_OUTCOME" != skipped ]; then say "Emptying the emulators for the recorded run"; reset_emulators; fi
 if ! bash .crew/scripts/scout/record.sh; then
   if [ "$SCOUT_MODE" = pr ] && ! dry_run; then node .crew/scripts/scout/report.mjs || warn "Couldn't post the report on the PR"; fi
   die "$(cat "$SCOUT_OUT/broke.txt" 2>/dev/null || echo "Scout's recorded run broke before it had results")"
