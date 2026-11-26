@@ -295,8 +295,15 @@ EOF
   else
     export SCOUT_FOCUS="$FOCUS" SCOUT_BUDGET="$BUDGET" SCOUT_REUSED="$REUSED"
     case "$SCOUT_MODE" in regression) TASK=regression ;; coverage) TASK=coverage ;; smoke) TASK=smoke ;; *) TASK=qa ;; esac
+    # The recorded run uses the core specs, seed and crew config as laid out above, not as the agent left
+    # them: an agent that "fixed" a PR's correct core spec back to main's made the PR fail with nothing to fix.
+    PIECES=$(mktemp -d)/pieces
+    bash .crew/scripts/scout/pieces.sh snapshot "$PIECES"
     run_claude "$TASK" "$PROMPT" "$MODEL" "$TURNS" "Bash,Read,Write,Edit,Glob,Grep,mcp__playwright" --mcp-config .crew/scout/mcp.json
     SCOUT_AGENT_OUTCOME=$( [ "$CLAUDE_EXIT" -eq 0 ] && echo success || echo failure)
+    PUT_BACK=$(bash .crew/scripts/scout/pieces.sh restore "$PIECES")
+    rm -rf "$(dirname "$PIECES")"
+    [ -z "$PUT_BACK" ] || warn "Scout's agent changed Scout's own pieces; the recorded run uses them as they were laid out: $(tr '\n' ';' <<<"$PUT_BACK")"
   fi
 fi
 export SCOUT_AGENT_OUTCOME
