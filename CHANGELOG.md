@@ -3,6 +3,16 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.4
+
+- **Patch merges a stale base in on QA and build rounds (sandbox runs).** A PR whose branch forked from
+  main before main fixed a core Scout spec failed those flows, and Patch rightly changed nothing, but it
+  merged the base in only for `conflicts`, and the branch merged cleanly, so every round ran on the same
+  stale spec. For `qa` and `build`, when `origin/<base>` is not an ancestor of the branch, Patch now merges
+  it in (no commit) before the crew is set up, exactly as for conflicts: the merge is pushed even if Patch
+  changes nothing else, so Scout re-runs with the base's fixes, and any conflict is listed in
+  `agent-out/conflicts.txt` for Patch to resolve. A branch already up to date is left as it is.
+
 ## 1.14.3
 
 - **Scout's agent can no longer change the verdict by editing Scout's own pieces (sandbox runs).** A PR

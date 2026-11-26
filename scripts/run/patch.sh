@@ -26,15 +26,20 @@ checkout_branch "$BRANCH"
 unshallow
 mkdir -p agent-out
 
-# ---- Merge conflicts: merge the base branch in without committing, before the crew is set up, so a branch
-# that predates the crew's config gets it from the base. Clean parts are staged; conflicted files keep
-# their markers for Patch to resolve (listed in agent-out/conflicts.txt).
-if [ "$PATCH_REASON" = conflicts ]; then
+# ---- Merge the base in: merge it without committing, before the crew is set up, so a branch that predates
+# the crew's config gets it from the base. Clean parts are staged; conflicted files keep their markers for
+# Patch to resolve (listed in agent-out/conflicts.txt). Always for conflicts; for qa and build only when the
+# branch is behind its base, since a stale branch fails flows and checks the base has already fixed, and no
+# conflict ever triggers the merge on its own. A branch already up to date is left as it is.
+if [ "$PATCH_REASON" = conflicts ] || [ "$PATCH_REASON" = qa ] || [ "$PATCH_REASON" = build ]; then
   git fetch -q origin "$BASE"
-  git "${GIT_AS[@]}" merge --no-ff --no-commit "origin/$BASE" || true
-  git diff --name-only --diff-filter=U > agent-out/conflicts.txt
-  say "Conflicted files:"; cat agent-out/conflicts.txt
-  if [ ! -s agent-out/conflicts.txt ] && [ ! -f .git/MERGE_HEAD ]; then say "origin/$BASE is already merged in; nothing to resolve"; fi
+  if [ "$PATCH_REASON" = conflicts ] || ! git merge-base --is-ancestor "origin/$BASE" HEAD; then
+    [ "$PATCH_REASON" = conflicts ] || say "$BRANCH is behind origin/$BASE; merging it in so this round has the base's fixes"
+    git "${GIT_AS[@]}" merge --no-ff --no-commit "origin/$BASE" || true
+    git diff --name-only --diff-filter=U > agent-out/conflicts.txt
+    say "Conflicted files:"; cat agent-out/conflicts.txt
+  fi
+  if [ ! -f .git/MERGE_HEAD ]; then say "origin/$BASE is already merged in"; fi
 fi
 
 crew_render
