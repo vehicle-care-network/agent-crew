@@ -1,7 +1,7 @@
 // node --test scripts/scout/seed.test.mjs
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -9,11 +9,12 @@ import { fileURLToPath } from 'node:url';
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'seed.sh');
 
-// A seed that "creates" its document by writing a file, and one that "updates" a document another seed
-// creates by failing when that file isn't there yet.
-const creates = (doc) => `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(doc)}, '');`;
-const updates = (doc) =>
-  `import { existsSync } from 'node:fs'; if (!existsSync(${JSON.stringify(doc)})) { console.error('5 NOT_FOUND'); process.exit(1); }`;
+// A seed that "creates" (set()s) its document by writing a file, and one that "updates" a document another
+// seed creates: it fails when that file isn't there yet, and otherwise writes its change into it.
+const creates = (doc, state = '') =>
+  `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(doc)}, ${JSON.stringify(state)});`;
+const updates = (doc, state = '') =>
+  `import { existsSync, writeFileSync } from 'node:fs'; if (!existsSync(${JSON.stringify(doc)})) { console.error('5 NOT_FOUND'); process.exit(1); } writeFileSync(${JSON.stringify(doc)}, ${JSON.stringify(state)});`;
 
 function repo(files) {
   const root = mkdtempSync(join(tmpdir(), 'seed-'));
@@ -28,23 +29,56 @@ const run = (root, env = {}) =>
   spawnSync('bash', [script], {
     cwd: root,
     encoding: 'utf8',
-    // C collation, as on the failed run: '-' sorts before '.', so the move seed runs first.
+    // C collation, as on the failed run, where '-' sorts before '.' in plain file-name order.
     env: { ...process.env, LC_ALL: 'C', PR_NUMBER: '294', SCOUT_REUSED: '', ...env },
   });
 
-test("a seed that updates another seed's document passes even when it sorts first", () => {
+test("a seed runs before the ones named after it (pr-1-a before pr-1-a-move), with no retry", () => {
   const root = repo({
-    'e2e/scout/_seed/pr-294-timeline-move.mjs': updates('tl_open_mid'),
-    'e2e/scout/_seed/pr-294-timeline.mjs': creates('tl_open_mid'),
+    'e2e/scout/_seed/pr-294-timeline-move.mjs': updates('tl_open_mid', 'moved'),
+    'e2e/scout/_seed/pr-294-timeline.mjs': creates('tl_open_mid', 'open'),
   });
   try {
     const r = run(root);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.ok(
-      r.stdout.indexOf('pr-294-timeline-move.mjs\n') < r.stdout.indexOf('pr-294-timeline.mjs\n'),
-      'runs in file-name order first',
+      r.stdout.indexOf('pr-294-timeline.mjs\n') < r.stdout.indexOf('pr-294-timeline-move.mjs\n'),
+      r.stdout,
     );
-    assert.match(r.stdout, /Seeding e2e\/scout\/_seed\/pr-294-timeline-move\.mjs \(again\)/);
+    assert.doesNotMatch(r.stdout, /again/);
+    assert.equal(readFileSync(join(root, 'tl_open_mid'), 'utf8'), 'moved');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("seeding twice over the data already there keeps the move seed's change", () => {
+  // record.sh runs seed.sh again, and the emulators aren't always reset in between.
+  const root = repo({
+    'e2e/scout/_seed/pr-294-timeline-move.mjs': updates('tl_open_mid', 'moved'),
+    'e2e/scout/_seed/pr-294-timeline.mjs': creates('tl_open_mid', 'open'),
+  });
+  try {
+    for (const round of [1, 2]) {
+      const r = run(root);
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.equal(readFileSync(join(root, 'tl_open_mid'), 'utf8'), 'moved', `after run ${round}`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a seed that needs a later folder's document passes on the retry", () => {
+  const root = repo({
+    'e2e/scout/core/_seed/needs-flow.mjs': updates('flow', 'updated'),
+    'e2e/scout/_seed/pr-294-flow.mjs': creates('flow', 'created'),
+  });
+  try {
+    const r = run(root);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /Seeding e2e\/scout\/core\/_seed\/needs-flow\.mjs \(again\)/);
+    assert.equal(readFileSync(join(root, 'flow'), 'utf8'), 'updated');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

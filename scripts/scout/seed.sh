@@ -6,9 +6,11 @@
 # recorded run, so that run starts from this data and not from what Scout's agent left behind (a flow
 # that saves changes the document the read-only flows then open).
 #
-# Every seed runs even if one fails. Seeds run in file-name order, so one that needs another's documents
-# fails when it sorts first (`pr-1-a-move.mjs` before `pr-1-a.mjs`): the ones that failed run once more
-# after all the others, and the script exits 1, naming them, only if one fails again.
+# Within each folder, seeds run in order of their name without `.mjs`, so `pr-1-a.mjs` runs before
+# `pr-1-a-move.mjs` (plain file-name order puts `-` before `.`, and the move seed would then fail on an
+# empty emulator, or, over data already there, succeed and have its change overwritten by `pr-1-a.mjs`).
+# Every seed runs even if one fails; the ones that failed run once more after all the others (a seed may
+# need one in another folder), and the script exits 1, naming them, only if one fails again.
 #
 # Env: PR_NUMBER (0 or unset outside a PR), SCOUT_REUSED (true when the specs came from the previous run).
 # Usage: .crew/scripts/scout/seed.sh      (from the repo root, after start-env.sh)
@@ -16,18 +18,22 @@ set -euo pipefail
 
 PR="${PR_NUMBER:-0}"
 set -a; . ./.env.local; set +a
+# The .mjs files in folder $1, sorted by name without `.mjs`.
+in_order() {
+  local f
+  for f in "$1"/*.mjs; do [ -f "$f" ] || continue; printf '%s\n' "${f%.mjs}"; done | LC_ALL=C sort | sed 's/$/.mjs/'
+}
 seeds=()
-for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do
-  [ -f "$f" ] && seeds+=("$f")
+for dir in e2e/scout/core/_seed e2e/scout/features/_seed; do
+  while IFS= read -r f; do seeds+=("$f"); done < <(in_order "$dir")
 done
 # This PR's own seeds run whether its specs came back from HQ or were committed on its branch.
-for f in e2e/scout/_seed/*.mjs; do
-  [ -f "$f" ] || continue
+while IFS= read -r f; do
   case "$(basename "$f")" in
     "pr-$PR-"*) seeds+=("$f") ;;
     *) [ "${SCOUT_REUSED:-}" != true ] || seeds+=("$f") ;;
   esac
-done
+done < <(in_order e2e/scout/_seed)
 
 failed=()
 for f in ${seeds[@]+"${seeds[@]}"}; do
