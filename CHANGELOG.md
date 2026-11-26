@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.4
+## 1.14.5
 
 - **Patch merges a stale base in on QA and build rounds (sandbox runs).** A PR whose branch forked from
   main before main fixed a core Scout spec failed those flows, and Patch rightly changed nothing, but it
@@ -12,6 +12,17 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   it in (no commit) before the crew is set up, exactly as for conflicts: the merge is pushed even if Patch
   changes nothing else, so Scout re-runs with the base's fixes, and any conflict is listed in
   `agent-out/conflicts.txt` for Patch to resolve. A branch already up to date is left as it is.
+
+## 1.14.4
+
+- **Scout's recorded run starts from the seeded emulators (sandbox runs).** The seeds ran once, before
+  Scout's agent, and the recorded run (the verdict) then ran every spec on whatever the agent's own runs
+  had left. So a flow that creates something failed only in the recorded run: SmogSupport's impersonate
+  flow made an Auth account and passed for the agent, then found that account already there and failed
+  on a `toBe`. After the agent and before `record.sh`, Auth and Firestore are emptied through the
+  emulators' own endpoints, and the base seed, core and feature seeds, and the PR's seeds run again,
+  just as they did before the agent. Runs with no agent are unchanged. If the reset fails, or a seed fails
+  while running again, the run warns and goes on as before. The GitHub Actions workflow (`scout-qa.yml`) is unchanged.
 
 ## 1.14.3
 
