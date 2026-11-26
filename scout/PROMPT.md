@@ -86,7 +86,8 @@ eight things in fifteen. In particular:
    with `node --env-file=.env.local <script>`. Read the models in `{{paths.models}}` and the queries the pages
    use so the documents have the shape the code expects. Seed the negative case as well as the positive one
    when the feature filters, matches or hides something. Timestamps that a page filters to "today" must be
-   relative to now.
+   relative to now. Seeds run in file-name order on an empty emulator, so a seed must create every document
+   it touches with `set()`, never `update()` a document another seed makes.
 4. **Explore.** Use the MCP browser to walk each flow by hand once and find stable selectors. Prefer
    roles, labels and visible text over CSS classes.
 5. **Write specs** in `e2e/scout/pr-<PR_NUMBER>-<flow>.spec.ts`:

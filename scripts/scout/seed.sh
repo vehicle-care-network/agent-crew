@@ -6,25 +6,39 @@
 # recorded run, so that run starts from this data and not from what Scout's agent left behind (a flow
 # that saves changes the document the read-only flows then open).
 #
-# Every seed runs even if one fails; the script exits 1 if any did.
+# Every seed runs even if one fails. Seeds run in file-name order, so one that needs another's documents
+# fails when it sorts first (`pr-1-a-move.mjs` before `pr-1-a.mjs`): the ones that failed run once more
+# after all the others, and the script exits 1, naming them, only if one fails again.
 #
 # Env: PR_NUMBER (0 or unset outside a PR), SCOUT_REUSED (true when the specs came from the previous run).
 # Usage: .crew/scripts/scout/seed.sh      (from the repo root, after start-env.sh)
 set -euo pipefail
 
 PR="${PR_NUMBER:-0}"
-rc=0
 set -a; . ./.env.local; set +a
+seeds=()
 for f in e2e/scout/core/_seed/*.mjs e2e/scout/features/_seed/*.mjs; do
-  [ -f "$f" ] || continue
-  echo "[Scout] Seeding $f"; node "$f" || rc=1
+  [ -f "$f" ] && seeds+=("$f")
 done
 # This PR's own seeds run whether its specs came back from HQ or were committed on its branch.
 for f in e2e/scout/_seed/*.mjs; do
   [ -f "$f" ] || continue
   case "$(basename "$f")" in
-    "pr-$PR-"*) echo "[Scout] Seeding $f"; node "$f" || rc=1 ;;
-    *) [ "${SCOUT_REUSED:-}" != true ] || { echo "[Scout] Seeding $f"; node "$f" || rc=1; } ;;
+    "pr-$PR-"*) seeds+=("$f") ;;
+    *) [ "${SCOUT_REUSED:-}" != true ] || seeds+=("$f") ;;
   esac
 done
-exit "$rc"
+
+failed=()
+for f in ${seeds[@]+"${seeds[@]}"}; do
+  echo "[Scout] Seeding $f"; node "$f" || failed+=("$f")
+done
+[ ${#failed[@]} -gt 0 ] || exit 0
+echo "[Scout] ${#failed[@]} seed(s) failed; running them again after the others"
+still=()
+for f in "${failed[@]}"; do
+  echo "[Scout] Seeding $f (again)"; node "$f" || still+=("$f")
+done
+[ ${#still[@]} -gt 0 ] || exit 0
+echo "[Scout] These seeds failed twice: ${still[*]}"
+exit 1

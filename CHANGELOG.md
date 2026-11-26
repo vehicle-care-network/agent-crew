@@ -3,6 +3,15 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.6
+
+- **A seed that needs another seed's documents no longer ends Scout's run.** Seeds run in file-name order,
+  and `-` sorts before `.`, so `pr-294-timeline-move.mjs` (which `update()`s a mission) ran before
+  `pr-294-timeline.mjs` (which creates it), got `NOT_FOUND` on the fresh emulator, and `seed.sh` ended the
+  run before any browser. `seed.sh` now runs every seed once, then runs the ones that failed once more after
+  all the others; it exits 1, naming them, only if one fails again. Scout's prompt now says a seed must
+  create every document it touches with `set()`, never `update()` one another seed makes.
+
 ## 1.14.5
 
 - **The recorded run's seeds run in `record.sh`, so every recorded run starts from the seeded data.** A
