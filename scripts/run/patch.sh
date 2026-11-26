@@ -38,8 +38,15 @@ if [ "$PATCH_REASON" = conflicts ] || [ "$PATCH_REASON" = qa ] || [ "$PATCH_REAS
     git "${GIT_AS[@]}" merge --no-ff --no-commit "origin/$BASE" || true
     git diff --name-only --diff-filter=U > agent-out/conflicts.txt
     say "Conflicted files:"; cat agent-out/conflicts.txt
+    # No MERGE_HEAD means there was nothing to merge (conflicts, but the base is already in) or the merge
+    # stopped before it began (a dirty tree, for example); say which.
+    if [ ! -f .git/MERGE_HEAD ]; then
+      if git merge-base --is-ancestor "origin/$BASE" HEAD; then say "origin/$BASE is already merged in"
+      else say "Merging origin/$BASE into $BRANCH failed; this round runs without the base's changes"; fi
+    fi
+  else
+    say "origin/$BASE is already merged in"
   fi
-  if [ ! -f .git/MERGE_HEAD ]; then say "origin/$BASE is already merged in"; fi
 fi
 
 crew_render
