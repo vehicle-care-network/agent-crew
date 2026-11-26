@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.2
+## 1.14.3
 
 - **Scout's recorded run starts from the seeded data again (sandbox runs).** The seeds ran once, before
   Scout's agent; the agent then ran the PR's specs, and a flow that saves changed the document the
@@ -22,6 +22,18 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   `npm_config_dangerously_allow_all_scripts` for the rest of the run, on npm 12 or later, when the repo's
   `package.json` has no `allowScripts`. That covers `npx firebase-tools` and a fallback Playwright too.
   A repo with its own `allowScripts` list keeps it, and older npm is left alone.
+
+## 1.14.2
+
+- **A point about a file Patch may not change no longer holds a review open.** On a PR whose QA rounds
+  each added a lesson, `LESSONS.md` ended up with four entries for the same PR. Iris asked for them to
+  be folded into one, Patch's brief forbade any edit to `LESSONS.md`, so every Patch round changed
+  nothing and the review never cleared. Iris now raises a point about existing content in `LESSONS.md`,
+  `risk-map.json`, workflows or notes files (content the PR doesn't itself change) once as a note for a
+  person in her summary, and approves if the rest is fine. Problems a PR writes into those files, such
+  as a token leak in a workflow, still count as normal findings. Patch may now edit, merge or remove the `LESSONS.md` entries the same PR added (every other
+  entry stays as it is), so Iris may ask him once to fold repeated ones. On a later round he edits his
+  own earlier entry instead of writing a new lesson that repeats or corrects it.
 
 ## 1.14.1
 
