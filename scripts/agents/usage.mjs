@@ -6,7 +6,8 @@
  *
  * Without AGENT_HQ_URL it only prints the line to the run's log.
  *
- * Env: AGENT_HQ_URL, ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN (the job needs `permissions: id-token: write`).
+ * Env: AGENT_HQ_URL, ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN (the job needs `permissions: id-token: write`),
+ * AGENT_RUN_EFFORT (the `--effort` run_claude gave Claude, if any).
  */
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -20,6 +21,8 @@ try {
   if (!result) throw new Error('The execution file has no result message');
   const init = messages.find((m) => m.type === 'system' && m.subtype === 'init');
   const model = init?.model ?? 'unknown';
+  // Claude's init message doesn't report the effort level today, so the one run_claude passed is the record.
+  const effort = init?.effort || process.env.AGENT_RUN_EFFORT || undefined;
   // Who paid: `none` means Claude signed in with the subscription token (CLAUDE_CODE_OAUTH_TOKEN), so the
   // cost below is only the API-price equivalent; anything else is an API key.
   const billing = init?.apiKeySource === 'none' ? 'subscription' : init?.apiKeySource ? 'api' : undefined;
@@ -30,6 +33,7 @@ try {
     missionId: missionId || null,
     pr: Number(pr) || null,
     model,
+    effort,
     billing,
     // Whether this repo gave the run a subscription token (set by the workflow), to explain API use.
     hasSubscriptionToken: process.env.HAS_SUBSCRIPTION_TOKEN ? process.env.HAS_SUBSCRIPTION_TOKEN === 'true' : null,
@@ -40,7 +44,7 @@ try {
     durationMs: result.duration_ms ?? 0,
     tokens: { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 },
   };
-  console.log(`[Usage] ${agent} ${task}: $${body.costUsd.toFixed(2)}, ${body.turns} turns, ${model}, ${billing ?? 'unknown billing'}${body.error ? `, failed: ${body.error}` : ''}`);
+  console.log(`[Usage] ${agent} ${task}: $${body.costUsd.toFixed(2)}, ${body.turns} turns, ${model}${effort ? `, effort ${effort}` : ''}, ${billing ?? 'unknown billing'}${body.error ? `, failed: ${body.error}` : ''}`);
 
   if (!hq) process.exit(0); // no Agent HQ: the line above is the record
 
