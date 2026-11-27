@@ -1,0 +1,9 @@
+{
+  "bolt": "claude-opus-5-5",
+  "iris": "claude-opus-5-5",
+  "nova": "claude-opus-5-5",
+  "patch": "claude-opus-5-5",
+  "radar": "claude-sonnet-5-5",
+  "rocket": "claude-opus-5-5",
+  "scout": "claude-sonnet-5-5"
+}

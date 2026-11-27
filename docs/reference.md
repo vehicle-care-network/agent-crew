@@ -346,7 +346,9 @@ it has since 1.12.
 
 With Agent HQ, right before each Claude step the workflow asks HQ which model you chose for that agent (`hq.mjs model
 <agent>`, the **Models** card in HQ's Spend view) and uses it; with no choice saved, or HQ unreachable, the
-repo variable `AGENT_MODEL_<AGENT>` applies, then the workflow's default. A change in HQ reaches the next
+repo variable `AGENT_MODEL_<AGENT>` applies, then the workflow's default. Off GitHub Actions
+(`scripts/run/<agent>.sh`), the last fallback is the agent's entry in `scripts/run/models.default.json`, the
+one table of the crew's defaults; an agent missing from it stops the run. A change in HQ reaches the next
 run of every agent in every repo. Without an HQ, the variable is how you choose.
 
 ## Releasing the crew

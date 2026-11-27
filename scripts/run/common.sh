@@ -187,11 +187,16 @@ load_pr() {
 }
 
 # ---- Claude
-# The model you picked for this agent in HQ, else the default handed in, else the crew's default.
+# The model you picked for this agent in HQ, else AGENT_MODEL_<AGENT>, else the crew's default for it in
+# models.default.json (the one place the crew's defaults live); an agent missing from that table fails.
+MODELS_JSON=".crew/scripts/run/models.default.json"
 pick_model() {
   local var="AGENT_MODEL_$(tr '[:lower:]' '[:upper:]' <<<"$AGENT")" chosen
   chosen=$(node "$HQ_MJS" model "$AGENT" 2>/dev/null || true)
-  echo "${chosen:-${!var:-$1}}"
+  chosen="${chosen:-${!var:-}}"
+  [ -n "$chosen" ] || chosen=$(jq -r --arg a "$AGENT" '.[$a] // empty' "$MODELS_JSON" 2>/dev/null || true)
+  [ -n "$chosen" ] || die "No default model for $AGENT in $MODELS_JSON" >&2
+  echo "$chosen"
 }
 # Runs Claude as claude-code-action would: `claude -p` with the brief, the model, a turn cap and the
 # allowed tools; keeps its stream as the execution file usage.mjs reads, and reports the cost to HQ.
