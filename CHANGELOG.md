@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.8
+## 1.14.9
 
 - **The crew's default models live in one table (sandbox runs, every agent).** Each `scripts/run/<agent>.sh`
   handed `pick_model` its own hard-coded default (`claude-opus-5-5` or `claude-sonnet-5-5`), so a repo that
@@ -13,6 +13,17 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   `scripts/run/models.default.json`; an agent missing from it stops the run with an error. The order (HQ,
   then the variable, then the default) and every agent's default are unchanged. The reusable workflows keep
   their own fallback in the `--model` expression.
+
+## 1.14.8
+
+- **Each run's effort level can be set and is reported with its usage (sandbox runs).** A mission to
+  record effort on each usage run stopped, rightly: nothing in the crew set an effort level, and
+  `usage.mjs` (which a repo's Bolt can't edit) sent only the model, so there was no value to record.
+  `run_claude` now passes `--effort` when the repo sets `AGENT_EFFORT_<AGENT>` (`low`, `medium`, `high`,
+  `xhigh` or `max`; anything else is ignored with a warning, and unset leaves Claude's own default), and
+  exports it as `AGENT_RUN_EFFORT`. Claude's init message doesn't report effort, so `usage.mjs` sends that
+  value as `effort` in the usage body and shows it in the `[Usage]` line, and leaves it out when unset.
+  HQ ignores the new field until it learns to store and show it.
 
 ## 1.14.7
 

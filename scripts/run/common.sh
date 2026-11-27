@@ -12,6 +12,7 @@
 #   RUN_URL                        where a person reads this run's log (the mission in HQ)
 #   CLAUDE_CODE_OAUTH_TOKEN        or ANTHROPIC_API_KEY; HAS_SUBSCRIPTION_TOKEN for the Spend view
 #   AGENT_MODEL_<AGENT>            optional default model (HQ's choice wins, as in the workflow)
+#   AGENT_EFFORT_<AGENT>           optional effort level (low, medium, high, xhigh, max); else Claude's own
 #   DRY_RUN=1                      stop before Claude and before anything is pushed or posted
 #
 # Differences from the workflows: HQ asked for the run, so an event-driven skip only applies when PARAMS
@@ -198,17 +199,30 @@ pick_model() {
   [ -n "$chosen" ] || die "No default model for $AGENT in $MODELS_JSON" >&2
   echo "$chosen"
 }
-# Runs Claude as claude-code-action would: `claude -p` with the brief, the model, a turn cap and the
-# allowed tools; keeps its stream as the execution file usage.mjs reads, and reports the cost to HQ.
+# The effort level set for this agent (AGENT_EFFORT_<AGENT>), else empty: Claude uses its own default.
+pick_effort() {
+  local var="AGENT_EFFORT_$(tr '[:lower:]' '[:upper:]' <<<"$AGENT")"
+  case "${!var:-}" in
+    "") ;;
+    low|medium|high|xhigh|max) echo "${!var}" ;;
+    *) warn "Ignoring $var='${!var}': not one of low, medium, high, xhigh, max" >&2 ;;
+  esac
+}
+# Runs Claude as claude-code-action would: `claude -p` with the brief, the model, a turn cap, the effort
+# level when one is set, and the allowed tools; keeps its stream as the execution file usage.mjs reads, and
+# reports the cost to HQ, with the effort (exported as AGENT_RUN_EFFORT, as Claude's init doesn't say it).
 #   run_claude <task-for-spend> <prompt> <model> <max-turns> <allowed-tools> [more claude args...]
 # Never fails the script; CLAUDE_EXIT holds the exit code for the caller to judge.
 run_claude() {
   local task="$1" prompt="$2" model="$3" turns="$4" tools="$5"
   shift 5
+  local effort
+  effort=$(pick_effort)
+  export AGENT_RUN_EFFORT="$effort"
   mkdir -p agent-out
-  say "Claude: $model, up to $turns turns"
+  say "Claude: $model${effort:+, effort $effort}, up to $turns turns"
   set +e
-  claude -p "$prompt" --model "$model" --max-turns "$turns" --allowedTools "$tools" --output-format stream-json --verbose "$@" > agent-out/claude.ndjson
+  claude -p "$prompt" --model "$model" ${effort:+--effort "$effort"} --max-turns "$turns" --allowedTools "$tools" --output-format stream-json --verbose "$@" > agent-out/claude.ndjson
   CLAUDE_EXIT=$?
   set -e
   # claude-code-action's execution file is a JSON array of the same messages; usage.mjs reads that shape.
