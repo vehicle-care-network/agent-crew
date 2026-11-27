@@ -40,7 +40,7 @@ if [ "$MODE" = label ]; then
   exit 0
 fi
 
-MODEL=$(pick_model claude-sonnet-5-5)
+MODEL=$(pick_model)
 RADAR_TASK=$(param task)
 export RADAR_MODE="$MODE" RADAR_TASK
 

@@ -10,6 +10,7 @@
  *   node .crew/scripts/agents/hq.mjs github-token                  # prints a token to push as the HQ App (Bolt, Patch)
  *   node .crew/scripts/agents/hq.mjs qa running|error              # Scout: the run started / broke before results (env PR_NUMBER, HEAD_SHA, RUN_URL; MISSION_ID for a smoke test)
  *   node .crew/scripts/agents/hq.mjs model <agent>                 # prints the model chosen for the agent in HQ (empty when none; never fails)
+ *   node .crew/scripts/agents/hq.mjs model <agent> --default       # the same, else AGENT_MODEL_<AGENT>, else the crew's default in scripts/run/models.default.json (fails when none)
  *   node .crew/scripts/agents/hq.mjs specs-pull                    # Scout in a sandbox: the specs HQ kept from this PR's previous run (env PR_NUMBER) or for this saved smoke test (env SCENARIO_ID), into e2e/scout; prints the count
  *   node .crew/scripts/agents/hq.mjs fakes-pull <dir>              # Scout: the repo's fake services from HQ's Fakes page, one <name>.json each; prints the count (never fails)
  *   node .crew/scripts/agents/hq.mjs fake-post <fakeId> <file>     # Radar: the fake it drafted from the code
@@ -25,6 +26,7 @@
  */
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const hq = (process.env.AGENT_HQ_URL || '').replace(/\/$/, '');
 const [command, missionId, ...rest] = process.argv.slice(2);
@@ -42,6 +44,27 @@ async function idToken() {
   return (await res.json()).value;
 }
 
+// `model <agent> --default`: HQ's choice (or none), then AGENT_MODEL_<AGENT>, then the crew's one table of
+// defaults. Prints the model and exits; an agent missing from the table fails, so no run starts unpinned.
+function printModel(agent, chosen) {
+  if (rest[0] !== '--default') {
+    process.stdout.write(chosen);
+    process.exit(0);
+  }
+  const table = new URL('../run/models.default.json', import.meta.url);
+  let model = chosen || process.env[`AGENT_MODEL_${String(agent).toUpperCase()}`] || '';
+  if (!model) {
+    try {
+      model = String(JSON.parse(readFileSync(table, 'utf8'))[agent] || '');
+    } catch {
+      // fall through: no default
+    }
+  }
+  if (!model) fail(`No default model for ${agent} in ${fileURLToPath(table)}`);
+  process.stdout.write(model);
+  process.exit(0);
+}
+
 async function post(path, body) {
   const res = await fetch(`${hq}${path}`, {
     method: 'POST',
@@ -55,7 +78,7 @@ async function post(path, body) {
 
 if (!hq) {
   // No Agent HQ: nothing to ask and nobody to tell.
-  if (command === 'model') process.exit(0);
+  if (command === 'model') printModel(missionId, '');
   if (command === 'ideas-known') {
     console.log('[]');
     process.exit(0);
@@ -85,7 +108,8 @@ if (!hq) {
 
 if (command === 'model') {
   // The model you picked for this agent in HQ (Spend › Models). Prints nothing when none is saved or HQ
-  // can't be reached, so the workflow falls back to its repo variable and default. Never fails the job.
+  // can't be reached, so the workflow falls back to its repo variable and default. Never fails the job
+  // (except with --default, for an agent that has no default: see printModel).
   const agent = missionId;
   let model = '';
   try {
@@ -103,8 +127,7 @@ if (command === 'model') {
     // fall through: no choice
   }
   console.error(`[AgentHq] Model from Agent HQ for ${agent}: ${model || 'none saved'}`);
-  process.stdout.write(model);
-  process.exit(0);
+  printModel(agent, model);
 }
 if (command === 'fakes-pull') {
   // The fakes kept for this repo in HQ (its Fakes page), for start-env.sh to run. The repo's own

@@ -31,7 +31,7 @@ STATUS=$(grep '^status=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)
 say "Landing: ${STATUS:-?}"
 
 if [ "$STATUS" = needs-rocket ]; then
-  MODEL=$(pick_model claude-opus-5-5)
+  MODEL=$(pick_model)
   PROMPT=$(printf 'Follow the brief in .crew/briefs/ROCKET.md.\nMISSION_ID: %s\nVERSION: %s\nBRANCH: %s\n' "$MISSION_ID" "$ROCKET_VERSION" "$ROCKET_BRANCH")
   # The landing still has to finish and reach HQ when the agent gives up or dies.
   if dry_run; then say "DRY_RUN: Rocket's agent would resolve the stop here"; else run_claude land "$PROMPT" "$MODEL" 200 Bash,Read,Write,Edit,Glob,Grep; fi
