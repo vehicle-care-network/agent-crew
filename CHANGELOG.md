@@ -3,6 +3,17 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.6
+
+- **Patch resolves a conflict in the crew's own config instead of dying on it (sandbox runs).** For
+  `reason: conflicts`, `patch.sh` merges the base in before setting up the crew, so when `crew.json`
+  itself conflicted, `render.mjs` hit the conflict markers and stopped on a raw JSON `SyntaxError`, and
+  HQ showed only "Patch failed". Patch now sets up the crew (briefs and `install_deps`) from the PR's side
+  of each conflicted `.github/agents/*` file (`crew.json`, a brief's `*.notes.md`; the base's side when the
+  PR deleted it), then puts the conflicted file back, markers and all, for Patch to resolve. `render.mjs`
+  also turns an unparseable `crew.json` into a `[CrewSetup] ... is not valid JSON` line (naming conflict
+  markers when they are why), so HQ shows the real reason wherever it happens.
+
 ## 1.14.5
 
 - **The recorded run's seeds run in `record.sh`, so every recorded run starts from the seeded data.** A
