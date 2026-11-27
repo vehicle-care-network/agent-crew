@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.6
+## 1.14.7
 
 - **A seed that needs another seed's documents no longer ends Scout's run.** Seeds run in file-name order,
   and `-` sorts before `.`, so `pr-294-timeline-move.mjs` (which `update()`s a mission) ran before
@@ -14,6 +14,16 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   seed once, then the ones that failed once more after all the others, and exits 1, naming them, only if one
   fails again. Scout's prompt now says a seed must
   create every document it touches with `set()`, never `update()` one another seed makes.
+
+## 1.14.6
+
+- **Patch merges a stale base in on QA and build rounds (sandbox runs).** A PR whose branch forked from
+  main before main fixed a core Scout spec failed those flows, and Patch rightly changed nothing, but it
+  merged the base in only for `conflicts`, and the branch merged cleanly, so every round ran on the same
+  stale spec. For `qa` and `build`, when `origin/<base>` is not an ancestor of the branch, Patch now merges
+  it in (no commit) before the crew is set up, exactly as for conflicts: the merge is pushed even if Patch
+  changes nothing else, so Scout re-runs with the base's fixes, and any conflict is listed in
+  `agent-out/conflicts.txt` for Patch to resolve. A branch already up to date is left as it is.
 
 ## 1.14.5
 
