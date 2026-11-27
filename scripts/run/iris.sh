@@ -60,7 +60,7 @@ git checkout -q "$HEAD_SHA"
 
 crew_render
 heartbeat_start "Reading the PR."
-MODEL=$(pick_model claude-opus-5-5)
+MODEL=$(pick_model)
 
 # ---- Iris reviews
 PROMPT=$(printf 'Follow the brief in .crew/briefs/IRIS.md.\nPR_NUMBER: %s\nROUND: %s\nSINCE: %s\nMISSION_ID: %s\nINSTRUCTIONS: %s\n' "$PR_NUMBER" "$ROUND" "$SINCE" "$MISSION_ID" "$INSTRUCTIONS")

@@ -29,7 +29,7 @@ crew_render
 install_deps
 mkdir -p agent-out
 heartbeat_start ""
-MODEL=$(pick_model claude-opus-5-5)
+MODEL=$(pick_model)
 
 # ---- Nova designs
 PROMPT=$(printf 'Follow the brief in .crew/briefs/NOVA.md.\nMISSION_ID: %s\nNOVA_PR_NUMBER: %s\nThe task, feedback and mock link are in the environment variables NOVA_TASK, NOVA_FEEDBACK and NOVA_MOCK_URL.\n' "$MISSION_ID" "$NOVA_PR_NUMBER")

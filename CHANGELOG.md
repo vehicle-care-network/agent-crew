@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.10
+## 1.14.11
 
 - **A seed that needs another seed's documents no longer ends Scout's run.** Seeds run in file-name order,
   and `-` sorts before `.`, so `pr-294-timeline-move.mjs` (which `update()`s a mission) ran before
@@ -14,6 +14,19 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   seed once, then the ones that failed once more after all the others, and exits 1, naming them, only if one
   fails again. Scout's prompt now says a seed must
   create every document it touches with `set()`, never `update()` one another seed makes.
+
+## 1.14.10
+
+- **The crew's default models live in one table (sandbox runs, every agent).** Each `scripts/run/<agent>.sh`
+  handed `pick_model` its own hard-coded default (`claude-opus-5-5` or `claude-sonnet-5-5`), so a repo that
+  wanted the defaults in one place had nothing to point at: Bolt, asked to do that in agent-hq, rightly
+  stopped, since the copies were all under `.crew/`. `pick_model` now takes no argument and, when HQ has no
+  choice saved (or is unreachable) and `AGENT_MODEL_<AGENT>` is unset, reads the agent's model from
+  `scripts/run/models.default.json`; an agent missing from it stops the run with an error. The order (HQ,
+  then the variable, then the default) and every agent's default are unchanged. That order now lives in
+  `hq.mjs model <agent> --default` (which `pick_model` calls), so a workflow can get the same answer from
+  one step instead of its own `|| 'claude-…'` fallback. Plain `hq.mjs model <agent>` is unchanged. The
+  reusable workflows still keep their own fallback in the `--model` expression until they move to it.
 
 ## 1.14.9
 

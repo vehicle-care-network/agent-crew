@@ -278,7 +278,7 @@ reset_emulators() {
 # ---- Scout explores, seeds and writes specs
 SCOUT_AGENT_OUTCOME=skipped
 if [ "$AGENT_RUNS" = true ] && [ "$BUILD_OK" = true ]; then
-  MODEL=$(pick_model claude-sonnet-5-5)
+  MODEL=$(pick_model)
   PROMPT=$(cat <<EOF
 Follow the brief in .crew/scout/PROMPT.md.
 SCOUT_MODE: $SCOUT_MODE
