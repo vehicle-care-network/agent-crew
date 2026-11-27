@@ -189,14 +189,11 @@ load_pr() {
 
 # ---- Claude
 # The model you picked for this agent in HQ, else AGENT_MODEL_<AGENT>, else the crew's default for it in
-# models.default.json (the one place the crew's defaults live); an agent missing from that table fails.
-MODELS_JSON=".crew/scripts/run/models.default.json"
+# scripts/run/models.default.json (the one place the crew's defaults live); `hq.mjs model --default` walks
+# that order, as the workflows can too, and fails for an agent missing from the table.
 pick_model() {
-  local var="AGENT_MODEL_$(tr '[:lower:]' '[:upper:]' <<<"$AGENT")" chosen
-  chosen=$(node "$HQ_MJS" model "$AGENT" 2>/dev/null || true)
-  chosen="${chosen:-${!var:-}}"
-  [ -n "$chosen" ] || chosen=$(jq -r --arg a "$AGENT" '.[$a] // empty' "$MODELS_JSON" 2>/dev/null || true)
-  [ -n "$chosen" ] || die "No default model for $AGENT in $MODELS_JSON" >&2
+  local chosen
+  chosen=$(node "$HQ_MJS" model "$AGENT" --default) || die "No default model for $AGENT (see the error above)" >&2
   echo "$chosen"
 }
 # The effort level set for this agent (AGENT_EFFORT_<AGENT>), else empty: Claude uses its own default.
