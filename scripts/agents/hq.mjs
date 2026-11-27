@@ -26,6 +26,7 @@
  */
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const hq = (process.env.AGENT_HQ_URL || '').replace(/\/$/, '');
 const [command, missionId, ...rest] = process.argv.slice(2);
@@ -59,7 +60,7 @@ function printModel(agent, chosen) {
       // fall through: no default
     }
   }
-  if (!model) fail(`No default model for ${agent} in ${table.pathname}`);
+  if (!model) fail(`No default model for ${agent} in ${fileURLToPath(table)}`);
   process.stdout.write(model);
   process.exit(0);
 }
