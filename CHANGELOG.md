@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.9
+## 1.14.10
 
 - **A seed that needs another seed's documents no longer ends Scout's run.** Seeds run in file-name order,
   and `-` sorts before `.`, so `pr-294-timeline-move.mjs` (which `update()`s a mission) ran before
@@ -14,6 +14,17 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   seed once, then the ones that failed once more after all the others, and exits 1, naming them, only if one
   fails again. Scout's prompt now says a seed must
   create every document it touches with `set()`, never `update()` one another seed makes.
+
+## 1.14.9
+
+- **Patch resolves a conflict in the crew's own config instead of dying on it (sandbox runs).** `patch.sh`
+  merges the base in before setting up the crew (for `conflicts`, and for `qa` and `build` on a stale
+  branch), so when `crew.json` itself conflicted, `render.mjs` hit the conflict markers and stopped on a raw JSON `SyntaxError`, and
+  HQ showed only "Patch failed". Patch now sets up the crew (briefs and `install_deps`) from the PR's side
+  of each conflicted `.github/agents/*` file (`crew.json`, a brief's `*.notes.md`; the base's side when the
+  PR deleted it), then puts the conflicted file back, markers and all, for Patch to resolve. `render.mjs`
+  also turns an unparseable `crew.json` into a `[CrewSetup] ... is not valid JSON` line (naming conflict
+  markers when they are why), so HQ shows the real reason wherever it happens.
 
 ## 1.14.8
 
