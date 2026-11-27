@@ -3,6 +3,19 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.10
+
+- **The crew's default models live in one table (sandbox runs, every agent).** Each `scripts/run/<agent>.sh`
+  handed `pick_model` its own hard-coded default (`claude-opus-5-5` or `claude-sonnet-5-5`), so a repo that
+  wanted the defaults in one place had nothing to point at: Bolt, asked to do that in agent-hq, rightly
+  stopped, since the copies were all under `.crew/`. `pick_model` now takes no argument and, when HQ has no
+  choice saved (or is unreachable) and `AGENT_MODEL_<AGENT>` is unset, reads the agent's model from
+  `scripts/run/models.default.json`; an agent missing from it stops the run with an error. The order (HQ,
+  then the variable, then the default) and every agent's default are unchanged. That order now lives in
+  `hq.mjs model <agent> --default` (which `pick_model` calls), so a workflow can get the same answer from
+  one step instead of its own `|| 'claude-…'` fallback. Plain `hq.mjs model <agent>` is unchanged. The
+  reusable workflows still keep their own fallback in the `--model` expression until they move to it.
+
 ## 1.14.9
 
 - **Patch resolves a conflict in the crew's own config instead of dying on it (sandbox runs).** `patch.sh`

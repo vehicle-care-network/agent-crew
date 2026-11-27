@@ -37,7 +37,7 @@ crew_render
 [ "$BOLT_MODE" = build ] && [ -z "$BOLT_BRANCH" ] && git checkout -q -b "$BRANCH"
 mkdir -p agent-out
 heartbeat_start ""
-MODEL=$(pick_model claude-opus-5-5)
+MODEL=$(pick_model)
 
 # ---- Bolt works
 PROMPT=$(printf 'Follow the brief in .crew/briefs/BOLT.md.\nMISSION_ID: %s\nBOLT_MODE: %s\nBOLT_BRANCH: %s\nBOLT_LEVEL: %s\nThe task, feedback and mock link are in the environment variables BOLT_TASK, BOLT_FEEDBACK and BOLT_MOCK_URL.\n' "$MISSION_ID" "$BOLT_MODE" "$BOLT_BRANCH" "$BOLT_LEVEL")

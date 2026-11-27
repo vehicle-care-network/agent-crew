@@ -65,7 +65,7 @@ crew_render
 install_deps
 cp -pR "$held/." . && rm -rf "$held"
 heartbeat_start ""
-MODEL=$(pick_model claude-opus-5-5)
+MODEL=$(pick_model)
 
 # ---- Patch fixes
 PROMPT=$(printf 'Follow the brief in .crew/briefs/PATCH.md.\nPR_NUMBER: %s\nPATCH_REASON: %s\nINSTRUCTIONS: %s\nMISSION_ID: %s\n' "$PR_NUMBER" "$PATCH_REASON" "$INSTRUCTIONS" "$MISSION_ID")
