@@ -3,6 +3,18 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.11
+
+- **A seed that needs another seed's documents no longer ends Scout's run.** Seeds run in file-name order,
+  and `-` sorts before `.`, so `pr-294-timeline-move.mjs` (which `update()`s a mission) ran before
+  `pr-294-timeline.mjs` (which creates it), got `NOT_FOUND` on the fresh emulator, and `seed.sh` ended the
+  run before any browser; and when `record.sh` seeded again over data already there, the move seed succeeded
+  and `pr-294-timeline.mjs` then overwrote its change without any error. `seed.sh` now sorts each folder's
+  seeds by name without `.mjs`, so `pr-294-timeline` runs before `pr-294-timeline-move`; it still runs every
+  seed once, then the ones that failed once more after all the others, and exits 1, naming them, only if one
+  fails again. Scout's prompt now says a seed must
+  create every document it touches with `set()`, never `update()` one another seed makes.
+
 ## 1.14.10
 
 - **The crew's default models live in one table (sandbox runs, every agent).** Each `scripts/run/<agent>.sh`

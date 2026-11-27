@@ -94,7 +94,8 @@ eight things in fifteen. In particular:
    with `node --env-file=.env.local <script>`. Read the models in `{{paths.models}}` and the queries the pages
    use so the documents have the shape the code expects. Seed the negative case as well as the positive one
    when the feature filters, matches or hides something. Timestamps that a page filters to "today" must be
-   relative to now.
+   relative to now. Seeds run in file-name order on an empty emulator, so a seed must create every document
+   it touches with `set()`, never `update()` a document another seed makes.
    **Keep a PR seed off the data the core specs count.** Every seed shares one database with the core
    specs, which assert exact lists and totals over the base seed and `e2e/scout/core/_seed/`, and with the
    kept flows, which can too over `e2e/scout/features/_seed/`. A PR seed that adds to those records (an
