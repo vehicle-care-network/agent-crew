@@ -3,6 +3,17 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
+## 1.14.7
+
+- **Scout's PR seeds no longer break core flows the PR never touched.** A PR to the Orders page failed
+  its Cooking list, pickup and shopping-totals core flows, and Patch found nothing to fix: Scout's own
+  PR seed had ordered the dishes the core specs count, so their exact totals were off. The repo's
+  `LESSONS.md` already said which dishes a PR seed may use, but Scout's brief never sent Scout there.
+  Scout now reads `.github/agents/LESSONS.md` before seeding; its brief says a PR seed creates records
+  only its spec uses (its own customer or account, its own items or ones `LESSONS.md` names as safe,
+  `pr-<N>-` ids) and resets only those in `beforeEach`; and on a re-run, a core flow failing on a page
+  the diff doesn't touch sends Scout to its own PR seeds first.
+
 ## 1.14.6
 
 - **Patch merges a stale base in on QA and build rounds (sandbox runs).** A PR whose branch forked from
