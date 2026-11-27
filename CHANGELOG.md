@@ -3,16 +3,26 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.6
+## 1.14.7
 
-- **Patch resolves a conflict in the crew's own config instead of dying on it (sandbox runs).** For
-  `reason: conflicts`, `patch.sh` merges the base in before setting up the crew, so when `crew.json`
-  itself conflicted, `render.mjs` hit the conflict markers and stopped on a raw JSON `SyntaxError`, and
+- **Patch resolves a conflict in the crew's own config instead of dying on it (sandbox runs).** `patch.sh`
+  merges the base in before setting up the crew (for `conflicts`, and for `qa` and `build` on a stale
+  branch), so when `crew.json` itself conflicted, `render.mjs` hit the conflict markers and stopped on a raw JSON `SyntaxError`, and
   HQ showed only "Patch failed". Patch now sets up the crew (briefs and `install_deps`) from the PR's side
   of each conflicted `.github/agents/*` file (`crew.json`, a brief's `*.notes.md`; the base's side when the
   PR deleted it), then puts the conflicted file back, markers and all, for Patch to resolve. `render.mjs`
   also turns an unparseable `crew.json` into a `[CrewSetup] ... is not valid JSON` line (naming conflict
   markers when they are why), so HQ shows the real reason wherever it happens.
+
+## 1.14.6
+
+- **Patch merges a stale base in on QA and build rounds (sandbox runs).** A PR whose branch forked from
+  main before main fixed a core Scout spec failed those flows, and Patch rightly changed nothing, but it
+  merged the base in only for `conflicts`, and the branch merged cleanly, so every round ran on the same
+  stale spec. For `qa` and `build`, when `origin/<base>` is not an ancestor of the branch, Patch now merges
+  it in (no commit) before the crew is set up, exactly as for conflicts: the merge is pushed even if Patch
+  changes nothing else, so Scout re-runs with the base's fixes, and any conflict is listed in
+  `agent-out/conflicts.txt` for Patch to resolve. A branch already up to date is left as it is.
 
 ## 1.14.5
 
