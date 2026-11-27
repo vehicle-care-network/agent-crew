@@ -3,7 +3,7 @@
 Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on `main`
 ([how](docs/reference.md#releasing-the-crew)).
 
-## 1.14.7
+## 1.14.9
 
 - **A seed that needs another seed's documents no longer ends Scout's run.** Seeds run in file-name order,
   and `-` sorts before `.`, so `pr-294-timeline-move.mjs` (which `update()`s a mission) ran before
@@ -14,6 +14,28 @@ Callers pin `@v1`, which moves to each release. A release is a `VERSION` bump on
   seed once, then the ones that failed once more after all the others, and exits 1, naming them, only if one
   fails again. Scout's prompt now says a seed must
   create every document it touches with `set()`, never `update()` one another seed makes.
+
+## 1.14.8
+
+- **Each run's effort level can be set and is reported with its usage (sandbox runs).** A mission to
+  record effort on each usage run stopped, rightly: nothing in the crew set an effort level, and
+  `usage.mjs` (which a repo's Bolt can't edit) sent only the model, so there was no value to record.
+  `run_claude` now passes `--effort` when the repo sets `AGENT_EFFORT_<AGENT>` (`low`, `medium`, `high`,
+  `xhigh` or `max`; anything else is ignored with a warning, and unset leaves Claude's own default), and
+  exports it as `AGENT_RUN_EFFORT`. Claude's init message doesn't report effort, so `usage.mjs` sends that
+  value as `effort` in the usage body and shows it in the `[Usage]` line, and leaves it out when unset.
+  HQ ignores the new field until it learns to store and show it.
+
+## 1.14.7
+
+- **Scout's PR seeds no longer break core flows the PR never touched.** A PR to the Orders page failed
+  its Cooking list, pickup and shopping-totals core flows, and Patch found nothing to fix: Scout's own
+  PR seed had ordered the dishes the core specs count, so their exact totals were off. The repo's
+  `LESSONS.md` already said which dishes a PR seed may use, but Scout's brief never sent Scout there.
+  Scout now reads `.github/agents/LESSONS.md` before seeding; its brief says a PR seed creates records
+  only its spec uses (its own customer or account, its own items or ones `LESSONS.md` names as safe,
+  `pr-<N>-` ids) and resets only those in `beforeEach`; and on a re-run, a core flow failing on a page
+  the diff doesn't touch sends Scout to its own PR seeds first.
 
 ## 1.14.6
 

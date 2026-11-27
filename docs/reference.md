@@ -349,6 +349,10 @@ With Agent HQ, right before each Claude step the workflow asks HQ which model yo
 repo variable `AGENT_MODEL_<AGENT>` applies, then the workflow's default. A change in HQ reaches the next
 run of every agent in every repo. Without an HQ, the variable is how you choose.
 
+On HQ's sandbox runs, `AGENT_EFFORT_<AGENT>` (`low`, `medium`, `high`, `xhigh` or `max`) sets the agent's
+effort level (`claude --effort`); unset, Claude uses its own default. The usage sent to HQ carries it as
+`effort` when set.
+
 ## Releasing the crew
 
 Every change lands on `main` by PR. To release, bump `VERSION` in a PR (with the change, or on its own

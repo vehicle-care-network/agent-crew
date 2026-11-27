@@ -56,6 +56,10 @@ Seeds you write for your own flows go in `e2e/scout/_seed/pr-<PR_NUMBER>-<flow>.
 they feed (`e2e/scout/pr-<PR_NUMBER>-<flow>.spec.ts`), so that when someone keeps the flow in HQ its seed
 goes with it.
 
+**Read `.github/agents/LESSONS.md` before you write a seed**, when the repo has one: it holds mistakes
+the crew already made here, and some are rules about seeds (which records a PR seed may use). They win
+over your own judgment.
+
 ## Your budget
 
 Your prompt gives `SCOUT_MODE`, the change's `IMPACT` (from `.github/agents/risk-map.json`) and a
@@ -70,7 +74,11 @@ eight things in fifteen. In particular:
 - **Explore only when you must.** If the code tells you the selectors and text, skip the MCP browser.
 - **If specs from the previous run exist** (`e2e/scout/pr-$PR_NUMBER-*.spec.ts`), this is a re-run after new
   commits. Run them first. Update one only if the change legitimately altered that behaviour; add a new one
-  only if the new commits reach a flow none of them covers. Don't rewrite what still works.
+  only if the new commits reach a flow none of them covers. Don't rewrite what still works. When a core
+  flow fails on a page the diff doesn't touch (you don't run the whole suite, so your prompt names it, under
+  `FLOWS TO RE-RUN`, `ADJUSTMENTS` or `SCOUT_FOCUS`), check your own `e2e/scout/_seed/pr-$PR_NUMBER-*` seeds
+  first: if one adds to the records that page counts or lists (step 3), it is the cause, not the app.
+  Rewrite that seed (and its spec) onto records of its own.
 
 ## Steps (mode `pr`)
 
@@ -88,6 +96,14 @@ eight things in fifteen. In particular:
    when the feature filters, matches or hides something. Timestamps that a page filters to "today" must be
    relative to now. Seeds run in file-name order on an empty emulator, so a seed must create every document
    it touches with `set()`, never `update()` a document another seed makes.
+   **Keep a PR seed off the data the core specs count.** Every seed shares one database with the core
+   specs, which assert exact lists and totals over the base seed and `e2e/scout/core/_seed/`, and with the
+   kept flows, which can too over `e2e/scout/features/_seed/`. A PR seed that adds to those records (an
+   order for a base-seed item or a core customer, a booking on a core account) changes what a core page
+   shows and fails core or kept flows the diff never touched. So a PR seed
+   creates records only that spec uses: its own customer or account (not `SCOUT.customerId`, nor one a
+   core seed creates), its own items or ones `LESSONS.md` names as safe, ids prefixed `pr-<PR_NUMBER>-`.
+   Its spec resets those docs in `beforeEach`, and only those.
 4. **Explore.** Use the MCP browser to walk each flow by hand once and find stable selectors. Prefer
    roles, labels and visible text over CSS classes.
 5. **Write specs** in `e2e/scout/pr-<PR_NUMBER>-<flow>.spec.ts`:
