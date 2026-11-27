@@ -49,8 +49,21 @@ if [ "$PATCH_REASON" = conflicts ] || [ "$PATCH_REASON" = qa ] || [ "$PATCH_REAS
   fi
 fi
 
+# A conflicted crew file (crew.json, a brief's notes) can't set the crew up: render.mjs and install_deps
+# read crew.json, and the markers would land in the briefs. Set up from the PR's side of each (the base's
+# when the PR deleted it), then put the conflicted file back as it was for Patch to resolve.
+held=$(mktemp -d)
+if [ -s agent-out/conflicts.txt ]; then
+  while IFS= read -r f; do
+    case "$f" in .github/agents/*) [ -f "$f" ] || continue ;; *) continue ;; esac
+    mkdir -p "$held/$(dirname "$f")" && cp -p "$f" "$held/$f"
+    git show ":2:$f" > "$f" 2>/dev/null || git show ":3:$f" > "$f" 2>/dev/null || cp -p "$held/$f" "$f"
+    say "$f is conflicted: setting the crew up from the PR's side of it, then putting the conflict back"
+  done < agent-out/conflicts.txt
+fi
 crew_render
 install_deps
+cp -pR "$held/." . && rm -rf "$held"
 heartbeat_start ""
 MODEL=$(pick_model)
 
